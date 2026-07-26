@@ -220,6 +220,18 @@ fn uint_lit(value: u128, bits: u32) -> String {
     }
 }
 
+/// `const val` if `uint_lit(_, bits)` produces a literal kotlinc accepts as a
+/// compile-time constant, `val` otherwise. Only `UInt`/`ULong` have a literal
+/// suffix (`u`/`uL`); `UByte`/`UShort` go through a `.toUByte()`/`.toUShort()`
+/// call, which kotlinc rejects in a `const val` initializer despite being
+/// foldable, and `BigInteger` isn't a `const`-eligible type at all.
+fn uint_val_keyword(bits: u32) -> &'static str {
+    match carrier_bits(bits) {
+        32 | 64 => "const val",
+        _ => "val",
+    }
+}
+
 /// `value` as a bare `BigInteger` literal, however wide — used where a
 /// constant (a tagged-union id, most often) is written straight into a
 /// `DefgenBits`, with no typed carrier variable in between. `BigInteger`'s
@@ -238,6 +250,9 @@ fn bigint_lit(value: u128) -> String {
 fn to_bigint(expr: &str, bits: u32, signed: bool) -> String {
     match carrier_bits(bits) {
         128 => expr.to_string(),
+        // Already a `Long`; `.toLong()` here would be a redundant conversion,
+        // which kotlinc warns on and the conformance build treats as an error.
+        64 if signed => format!("BigInteger.valueOf({expr})"),
         _ if signed => format!("BigInteger.valueOf({expr}.toLong())"),
         _ => format!("BigInteger({expr}.toString())"),
     }
@@ -1061,6 +1076,16 @@ impl<'m> Emitter<'m> {
         }
 
         self.line(1, "companion object {");
+        // A tagged union's layout never has a tail (§7: the payload is a fixed
+        // number of bits chosen by the container width), so unlike a struct
+        // this is always a plain SIZE, never a FIXED_SIZE/MAX_SIZE pair.
+        // A nested-only union is free to be sub-byte (§6); only a bound one has
+        // to be a whole number of bytes (§10), so a byte size is only stated
+        // where it is exact.
+        if def.layout.is_byte_aligned() {
+            self.line(2, &format!("const val SIZE: Int = {}", def.layout.fixed_bytes()));
+            self.blank();
+        }
         if def.root {
             self.note(2, &format!("Decodes exactly {size} bytes; any other length is an error."));
             self.line(2, &format!("fun decode(data: ByteArray): {name} {{"));
@@ -1117,7 +1142,14 @@ impl<'m> Emitter<'m> {
             self.docs_with(1, &v.docs, &[format!("Wire id `0x{:x}` (§7).", v.id)]);
             if visible.is_empty() {
                 self.line(1, &format!("object {cls} : {name}() {{"));
-                self.line(2, &format!("const val ID: {tag_carrier} = {}", uint_lit(v.id, tag_bits)));
+                self.line(
+                    2,
+                    &format!(
+                        "{} ID: {tag_carrier} = {}",
+                        uint_val_keyword(tag_bits),
+                        uint_lit(v.id, tag_bits)
+                    ),
+                );
                 self.blank();
                 self.line(2, "override fun packFixed(bits: DefgenBits, off: Int) {");
                 self.line(3, &format!("bits.put(off, {tag_bits}, {})", bigint_lit(v.id)));
@@ -1136,7 +1168,14 @@ impl<'m> Emitter<'m> {
                     .collect();
                 self.line(1, &format!("data class {cls}({}) : {name}() {{", params.join(", ")));
                 self.line(2, "companion object {");
-                self.line(3, &format!("const val ID: {tag_carrier} = {}", uint_lit(v.id, tag_bits)));
+                self.line(
+                    3,
+                    &format!(
+                        "{} ID: {tag_carrier} = {}",
+                        uint_val_keyword(tag_bits),
+                        uint_lit(v.id, tag_bits)
+                    ),
+                );
                 self.blank();
                 self.note(3, "Reads this variant's payload; the id is already matched. Internal.");
                 self.line(3, &format!("internal fun unpackPayload(bits: DefgenBits, off: Int): {cls} {{"));

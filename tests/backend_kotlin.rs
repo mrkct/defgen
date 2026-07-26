@@ -406,8 +406,11 @@ fn a_tagged_union_becomes_a_sealed_class_with_nested_variants() {
     assert_contains(&file, "data class SetVolume(var volume: Volume) : Command() {");
     assert_contains(&file, "object TriggerFactoryReset : Command() {");
     assert_contains(&file, "data class Unknown(val id: UShort, val raw: ULong) : Command() {");
-    assert_contains(&file, "const val ID: UShort = 1.toUShort()");
-    assert_contains(&file, "const val ID: UShort = 65535.toUShort()");
+    // Not `const`: kotlinc rejects a `UShort`/`UByte` `const val` initializer
+    // (no literal suffix exists for either, so it can only be reached through
+    // a conversion call, which kotlinc does not treat as constant-foldable).
+    assert_contains(&file, "val ID: UShort = 1.toUShort()");
+    assert_contains(&file, "val ID: UShort = 65535.toUShort()");
     // A payload-less variant is still a type; it just carries no properties.
     let reset = class_body(&file, "TriggerFactoryReset");
     assert!(!reset.contains(": UByte"), "TriggerFactoryReset declares no payload");
@@ -415,12 +418,12 @@ fn a_tagged_union_becomes_a_sealed_class_with_nested_variants() {
 }
 
 #[test]
-fn a_union_variant_carries_the_unions_id_only_as_a_compile_time_constant() {
+fn a_union_variant_carries_the_unions_id_on_its_type_not_an_instance() {
     // §7: the id is a property of the variant's type, never of an instance,
     // so it cannot be set to something that disagrees with the type it is on.
     let file = example_file();
     let body = class_body(&file, "SetVolume");
-    assert_contains(&body, "const val ID: UShort = 1.toUShort()");
+    assert_contains(&body, "val ID: UShort = 1.toUShort()");
     assert!(!body.contains("var id"), "a known variant has no per-instance id to get wrong");
     // The fallback variant is the one exception: its id is data, by definition.
     assert_contains(&file, "data class Unknown(val id: UShort, val raw: ULong) : Command()");
