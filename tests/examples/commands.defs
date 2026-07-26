@@ -1,0 +1,144 @@
+// commands.defs — sample schema exercising every defgen language feature.
+// Describes the GATT layout for a fictitious BLE hearing-aid-style device.
+// See SPEC.md for the full language specification.
+
+// Schema/protocol version. Bump whenever variants or fields are added;
+// never remove or renumber existing ones. Exposed to generated code as a
+// constant so apps and firmware can log/detect version skew.
+version = 2;
+
+// Default byte order for every root container in this file (little-endian,
+// the common case for BLE). Can be overridden per-container; see
+// `LegacySerial` below for a device that mixes conventions.
+endian: little;
+
+---
+
+/// Playback volume. The device only has 4 bits of resolution.
+alias Volume = u4;
+
+/// Owner's display name: variable-length, at most 32 UTF-8 bytes. There's
+/// no length prefix in the payload — the actual length written/read is
+/// whatever the GATT transport itself delivers, so a client can write
+/// any name from 0 up to 32 bytes and the wire size follows suit.
+alias OwnerName = string(max: 32);
+
+/// Ambient temperature, in hundredths of a degree Celsius on the wire.
+/// `scaled` is a dedicated declaration (not something you can bolt onto
+/// any field): it always states both the raw wire type and the decoded
+/// physical type explicitly, so there's never an inferred conversion.
+scaled Temperature: i16 as f32 (scale: 0.01);
+
+/// Battery voltage, in units of 20 millivolts on the wire.
+scaled BatteryVoltage: u8 as f32 (scale: 0.02);
+
+/// Playback/output mode. Firmware may add new modes over time, so this is
+/// declared "open": unmatched wire values decode to `Unknown(raw)` instead
+/// of failing. Omit the `else` arm to get the strict/closed default.
+enum HearingMode: u4 {
+    Default = 0,
+    Stereo = 1,
+    Mono = 2,
+    Cinema = 3,
+    else Unknown,
+}
+
+/// Reusable 3-axis orientation reading, embedded in multiple containers below.
+/// Not bound to any characteristic itself — plain value types don't need one.
+struct Orientation: u24 {
+    x: i8,
+    y: i8,
+    z: i8,
+}
+
+/// Device status, pushed via notify. Demonstrates: an alias field, a plain
+/// enum field, a bool field, a scaled-type field, a nested struct field,
+/// silently-ignored padding, and round-tripped reserved bits.
+struct Status: u64 {
+    active_profile: u4,
+    volume: Volume,
+    mode: HearingMode,
+    muted: bool,
+    battery: BatteryVoltage,
+    orientation: Orientation,
+    padding: u15,        // unused; always zero on encode, ignored on decode
+    reserved flags: u4,  // firmware-private bits; must round-trip unchanged
+}
+
+/// Fixed-size history of the last 4 temperature samples (array of scalars).
+struct TemperatureLog: u64 {
+    samples: Temperature[4],
+}
+
+/// Fixed 2-point motion path (array of nested structs), with padding that
+/// is *validated* to be zero on decode rather than silently ignored.
+struct MotionPath: u64 {
+    points: Orientation[2],
+    padding: u16 = 0,
+}
+
+/// Legacy characteristic kept for backwards compatibility with older
+/// firmware that only ever spoke big-endian on this one value.
+#[endian(big)]
+struct LegacySerial: u32 {
+    serial: u32,
+}
+
+/// Free-form diagnostic note a technician can attach during pairing.
+/// Demonstrates fixed fields followed by trailing variable-length data:
+/// the struct's own size varies with `label`, so it deliberately has no
+/// `: uN` — only the fixed prefix (`severity`, a whole byte) needs to be
+/// byte-aligned, which it already is.
+struct DiagnosticLabel {
+    severity: u8,
+    label: string(max: 24),
+}
+
+/// Command tagged union. `id` is the wire discriminant (always explicit —
+/// never auto-numbered, since these are cross-firmware-version wire
+/// contracts). Each variant only needs to declare the bits it uses; the
+/// rest of the 48-bit payload budget (64 - 16 tag bits) is implicit,
+/// silently-ignored padding, same as an explicit `padding` field would be.
+enum Command(id: u16): u64 {
+    SetVolume(0x0001) { volume: Volume }
+    SetMute(0x0002) { muted: bool }
+    SetMode(0x0003) { mode: HearingMode }
+    SetOrientationOffset(0x0004) { offset: Orientation }
+    TriggerFactoryReset(0xffff)
+    else Unknown // forward-compat: unrecognized ids decode to Unknown { id, raw }
+}
+
+// GATT-layer bindings: which characteristic carries which value type, and
+// with what properties. Binding is separate from type definition — a type
+// (like Orientation above) is free to exist without ever being bound.
+service HearingAidControl(uuid: "7d8f0000-3c1a-4e8a-9b5a-000000000000") {
+    characteristic StatusChar(
+        uuid: "7d8f0001-3c1a-4e8a-9b5a-000000000000",
+        properties: [read, notify],
+    ): Status;
+
+    characteristic CommandChar(
+        uuid: "7d8f0002-3c1a-4e8a-9b5a-000000000000",
+        properties: [write, write_without_response],
+    ): Command;
+
+    characteristic TemperatureLogChar(
+        uuid: "7d8f0003-3c1a-4e8a-9b5a-000000000000",
+        properties: [read],
+    ): TemperatureLog;
+
+    characteristic SerialChar(
+        uuid: "7d8f0004-3c1a-4e8a-9b5a-000000000000",
+        properties: [read],
+    ): LegacySerial;
+
+    characteristic OwnerNameChar(
+        uuid: "7d8f0005-3c1a-4e8a-9b5a-000000000000",
+        properties: [read, write],
+    ): OwnerName;
+
+    characteristic DiagnosticLabelChar(
+        uuid: "7d8f0006-3c1a-4e8a-9b5a-000000000000",
+        properties: [read, write],
+    ): DiagnosticLabel;
+}

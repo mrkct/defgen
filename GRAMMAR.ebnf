@@ -1,0 +1,296 @@
+(* ===========================================================================
+   defgen IDL — grammar (v1)
+
+   Companion to SPEC.md; section references (§) point at it. This file is the
+   normative syntax: anything the grammar rejects is a parse error, anything it
+   accepts may still be rejected by a later semantic check (§12 — exact-fit
+   widths, duplicate values, undeclared type references, ...).
+
+   Notation
+   --------
+   ISO/IEC 14977 EBNF, with two conveniences:
+
+     list< X >  ==  [ X , { "," , X } , [ "," ] ]
+                    a comma-separated list with an optional trailing comma
+                    (§1 — trailing commas are permitted everywhere)
+
+     UPPERCASE  ==  a lexical token, defined in the "Lexical structure"
+                    section at the bottom
+
+   Whitespace and `//` line comments may appear between any two tokens and are
+   not written out in the syntactic rules. `///` doc comments are *not*
+   whitespace: they are tokens, and may only appear where a rule mentions DOC.
+   =========================================================================== *)
+
+
+(* --- File structure (§1.1) ----------------------------------------------- *)
+
+file
+    = header , "---" , { declaration } , EOF
+    ;
+
+(* Both pragmas are required and each may appear exactly once; the grammar
+   permits either order, the parser enforces presence and uniqueness so it can
+   report which one is missing or duplicated. Nothing else may appear here. *)
+header
+    = { version_pragma | endian_pragma }
+    ;
+
+version_pragma
+    = "version" , "=" , INT , ";"
+    ;
+
+endian_pragma
+    = "endian" , ":" , endianness , ";"
+    ;
+
+endianness
+    = "little" | "big"
+    ;
+
+
+(* --- Declarations (§3-§7, §10) ------------------------------------------- *)
+
+declaration
+    = { DOC } , { attribute } , declaration_body
+    ;
+
+(* Attributes are accepted syntactically on any declaration; only `struct` and
+   tagged-union `enum` may actually carry one (§1.2), and in v1 the only
+   recognized attribute is `endian(little|big)` (§8). *)
+declaration_body
+    = alias_decl
+    | scaled_decl
+    | enum_decl
+    | union_decl
+    | struct_decl
+    | service_decl
+    ;
+
+attribute
+    = "#" , "[" , IDENT , [ "(" , list< attribute_arg > , ")" ] , "]"
+    ;
+
+attribute_arg
+    = IDENT | INT | STRING
+    ;
+
+
+(* --- Aliases (§3) -------------------------------------------------------- *)
+
+alias_decl
+    = "alias" , IDENT , "=" , field_type , ";"
+    ;
+
+
+(* --- Scaled types (§4) --------------------------------------------------- *)
+
+scaled_decl
+    = "scaled" , IDENT , ":" , integer_type , "as" , float_type ,
+      "(" , list< scaled_arg > , ")" , ";"
+    ;
+
+(* `scale` is required and `offset` optional; each at most once. *)
+scaled_arg
+    = "scale" , ":" , number
+    | "offset" , ":" , number
+    ;
+
+float_type
+    = "f32" | "f64"
+    ;
+
+
+(* --- Plain enums (§5) ---------------------------------------------------- *)
+
+enum_decl
+    = "enum" , IDENT , ":" , unsigned_type , "{" , list< enum_variant > , "}"
+    ;
+
+(* An `else` arm, if present, must be the final arm. *)
+enum_variant
+    = { DOC } , ( IDENT , [ "=" , INT ] | else_arm )
+    ;
+
+else_arm
+    = "else" , IDENT
+    ;
+
+
+(* --- Tagged unions (§7) -------------------------------------------------- *)
+
+(* Variants are newline-separated by convention; a separating comma is
+   accepted but not required, unlike a plain enum's arms. *)
+union_decl
+    = "enum" , IDENT , "(" , IDENT , ":" , unsigned_type , ")" ,
+      ":" , width ,
+      "{" , { union_variant , [ "," ] } , "}"
+    ;
+
+union_variant
+    = { DOC } , ( IDENT , "(" , INT , ")" , [ "{" , list< field > , "}" ]
+                | else_arm )
+    ;
+
+
+(* --- Structs (§6) -------------------------------------------------------- *)
+
+(* With `: uN` the struct is fixed-width and its fields must sum to exactly N;
+   without it, the struct is variable-length and must end in exactly one
+   variable-length field (§6.3). Both checks are semantic. *)
+struct_decl
+    = "struct" , IDENT , [ ":" , width ] , "{" , list< field > , "}"
+    ;
+
+field
+    = { DOC } , ( padding_field | reserved_field | value_field )
+    ;
+
+(* Bare form ignores the bits on decode; `= 0` validates them (§6.2).
+   The only literal permitted after `=` is `0`. *)
+padding_field
+    = "padding" , ":" , width , [ "=" , INT ]
+    ;
+
+reserved_field
+    = "reserved" , IDENT , ":" , unsigned_type
+    ;
+
+value_field
+    = IDENT , ":" , field_type
+    ;
+
+
+(* --- Types (§2, §6.1, §6.3) --------------------------------------------- *)
+
+field_type
+    = string_type
+    | scalar_type , [ array_suffix ]
+    ;
+
+array_suffix
+    = "[" , INT , "]"                   (* fixed-size array,      §6.1 *)
+    | "[" , "max" , ":" , INT , "]"     (* variable-length array, §6.3 *)
+    ;
+
+string_type
+    = "string" , "(" , "max" , ":" , INT , ")"
+    ;
+
+scalar_type
+    = primitive_type
+    | IDENT                             (* alias, scaled, enum, union or struct *)
+    ;
+
+primitive_type
+    = unsigned_type | signed_type | "bool"
+    ;
+
+integer_type
+    = unsigned_type | signed_type
+    ;
+
+unsigned_type
+    = "u" , DIGITS                      (* 1 <= N <= 128 *)
+    ;
+
+(* A bit count rather than a value: a container's size, or a run of padding.
+   Spelled like an unsigned type but not held to the primitive limit, since
+   nothing ever decodes those bits into one integer (§2, §6, §6.2). *)
+width
+    = "u" , DIGITS                      (* 1 <= N <= 4096 *)
+    ;
+
+signed_type
+    = "i" , DIGITS                      (* 2 <= N <= 128 *)
+    ;
+
+
+(* --- GATT metadata (§10) ------------------------------------------------- *)
+
+service_decl
+    = "service" , IDENT , "(" , "uuid" , ":" , STRING , [ "," ] , ")" ,
+      "{" , { characteristic_decl } , "}"
+    ;
+
+characteristic_decl
+    = { DOC } , "characteristic" , IDENT ,
+      "(" , list< characteristic_arg > , ")" , ":" , IDENT , ";"
+    ;
+
+(* Both arguments are required, in either order, each at most once. The
+   property list must name at least one property. *)
+characteristic_arg
+    = "uuid" , ":" , STRING
+    | "properties" , ":" , "[" , list< property > , "]"
+    ;
+
+property
+    = "read" | "write" | "write_without_response" | "notify" | "indicate"
+    ;
+
+
+(* ===========================================================================
+   Lexical structure (§1)
+   =========================================================================== *)
+
+(* Reserved words. Every other keyword-looking word above (`version`,
+   `endian`, `little`, `big`, `max`, `uuid`, `properties`, the property names,
+   `f32`, `f64`, `bool`) is contextual: it is lexed as IDENT and recognized by
+   position, so it stays usable as a field or type name. *)
+keyword
+    = "alias" | "as" | "characteristic" | "else" | "enum" | "padding"
+    | "reserved" | "scaled" | "service" | "string" | "struct"
+    ;
+
+IDENT
+    = ( LETTER | "_" ) , { LETTER | DIGIT | "_" }   (* minus keyword *)
+    ;
+
+INT
+    = DIGITS , { DIGITS | "_" }
+    | "0x" , HEX_DIGIT , { HEX_DIGIT | "_" }
+    ;
+
+(* Only ever consumed by `scale`/`offset` (§4); a bare INT is accepted there
+   too and widened. *)
+number
+    = [ "-" ] , FLOAT
+    | [ "-" ] , INT
+    ;
+
+FLOAT
+    = DIGITS , "." , [ DIGITS ] , [ EXPONENT ]
+    | DIGITS , EXPONENT
+    ;
+
+EXPONENT
+    = ( "e" | "E" ) , [ "+" | "-" ] , DIGITS
+    ;
+
+STRING
+    = '"' , { CHAR - ( '"' | "\" | NEWLINE ) | ESCAPE } , '"'
+    ;
+
+ESCAPE
+    = "\" , ( '"' | "\" | "n" | "r" | "t" | "0" )
+    ;
+
+DIGITS
+    = DIGIT , { DIGIT }
+    ;
+
+DIGIT       = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+HEX_DIGIT   = DIGIT | "a" | "b" | "c" | "d" | "e" | "f"
+                    | "A" | "B" | "C" | "D" | "E" | "F" ;
+LETTER      = "A" | ... | "Z" | "a" | ... | "z" ;
+
+(* Comments. `///` is tried before `//`, so a doc comment is never a line
+   comment. A `////`-or-longer run is a line comment, not a doc comment. *)
+DOC
+    = "///" , { CHAR - NEWLINE } , ( NEWLINE | EOF )
+    ;
+
+line_comment
+    = "//" , { CHAR - NEWLINE } , ( NEWLINE | EOF )
+    ;

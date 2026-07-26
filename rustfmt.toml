@@ -1,0 +1,4 @@
+# Wider lines and compact struct literals: the parser is full of small
+# span/diagnostic values that read better on one line than exploded over four.
+max_width = 110
+use_small_heuristics = "Max"
