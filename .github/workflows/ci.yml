@@ -50,4 +50,10 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      # The JavaScript backend's conformance test imports and runs its
+      # generated ES module. Pinning Node is what stops a runner image's
+      # default version from deciding whether that test runs, or fails.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
       - run: cargo test --all-features --workspace
