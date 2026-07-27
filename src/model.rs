@@ -115,6 +115,8 @@ pub enum WireType {
     /// `bool` — one bit (§2). Kept distinct from `UInt(1)` so backends can
     /// expose it as a native boolean.
     Bool,
+    /// `f32`/`f64` — an IEEE-754 value carried directly on the wire (§2).
+    Float(FloatType),
     /// An `alias`, `scaled`, `enum`, tagged union or `struct`. The name is
     /// preserved (rather than substituted away) so generated code can keep the
     /// domain type the author declared.
@@ -155,12 +157,13 @@ impl WireType {
         match self {
             WireType::UInt(n) | WireType::Int(n) => Some(carrier_bits(*n)),
             WireType::Bool => Some(8),
+            WireType::Float(f) => Some(f.bits()),
             _ => None,
         }
     }
 
     /// Whether the value is signed, and so sign-extended from bit `N-1` on
-    /// decode (§2).
+    /// decode (§2). A float's sign bit is part of IEEE-754, not this rule.
     pub fn is_signed(&self) -> bool {
         matches!(self, WireType::Int(_))
     }
@@ -506,6 +509,7 @@ impl Model {
         match ty {
             WireType::UInt(n) | WireType::Int(n) => Layout::fixed(*n),
             WireType::Bool => Layout::fixed(1),
+            WireType::Float(f) => Layout::fixed(f.bits()),
             WireType::Named(id) => self.get(*id).layout,
             WireType::Array { elem, count } => {
                 let elem_bits = u128::from(self.layout_of(elem).fixed_bits);

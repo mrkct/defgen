@@ -288,3 +288,30 @@ fn spans_point_at_the_written_source() {
     let (line, col) = defgen::span::line_col(EXAMPLE, status.name.span.start);
     assert_eq!((line, col), (61, 8));
 }
+
+#[test]
+fn f32_and_f64_are_scalar_wire_types() {
+    let src = "endian: little;\n---\nstruct S: u96 { a: f32, b: f64, }";
+    let parsed = parse(src);
+    let rendered: Vec<String> = parsed.diagnostics.iter().map(|d| d.render_plain("test.defs", src)).collect();
+    assert!(parsed.diagnostics.is_empty(), "unexpected diagnostics:\n{}", rendered.join("\n"));
+    let schema = parsed.schema.expect("schema");
+    let Some(Decl::Struct(s)) = schema.decl("S") else { panic!("S") };
+    let field_kind = |name: &str| {
+        s.fields
+            .iter()
+            .find_map(|f| match &f.kind {
+                FieldKind::Value { name: n, ty } if n.name == name => Some(ty.kind.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no field named `{name}`"))
+    };
+    match field_kind("a") {
+        FieldTypeKind::Scalar(ScalarType { kind: ScalarKind::Float(FloatType::F32), .. }) => {}
+        other => panic!("expected f32, got {other:?}"),
+    }
+    match field_kind("b") {
+        FieldTypeKind::Scalar(ScalarType { kind: ScalarKind::Float(FloatType::F64), .. }) => {}
+        other => panic!("expected f64, got {other:?}"),
+    }
+}

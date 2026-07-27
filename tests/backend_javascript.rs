@@ -406,6 +406,50 @@ fn an_alias_keeps_the_name_the_author_declared() {
     assert!(!module.contains("class Volume"), "an alias generates no runtime type");
 }
 
+/// A raw `f32`/`f64` field (§2) is carried as `number` and encodes to exactly
+/// the IEEE-754 bit pattern, little-endian on the wire — this is what
+/// actually pins the byte layout down, complementing the C backend's version
+/// of the same test (§13).
+#[test]
+fn raw_floats_round_trip_ieee754_bit_patterns() {
+    let Some(node) = node() else {
+        eprintln!("skipping the raw float round trip: no Node found");
+        return;
+    };
+    let src = schema(
+        "struct Floats: u96 { a: f32, b: f64, }\n\
+         service S(uuid: \"180a\") {\n\
+             characteristic C(uuid: \"2a00\", properties: [read]): Floats;\n\
+         }",
+    );
+    let module = module_of(&src, "floats");
+    assert_contains(&module, "@type {number}");
+
+    let dir = scratch("raw_floats");
+    std::fs::write(dir.join("floats.mjs"), module).unwrap();
+    let script = r#"
+import * as schema from "./floats.mjs";
+
+const v = new schema.Floats({ a: 1.5, b: -2.25 });
+const buf = v.encode();
+const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+if (view.getFloat32(0, true) !== 1.5) throw new Error("a bytes wrong");
+if (view.getFloat64(4, true) !== -2.25) throw new Error("b bytes wrong");
+
+const back = schema.Floats.decode(buf);
+if (back.a !== 1.5) throw new Error("a did not round-trip");
+if (back.b !== -2.25) throw new Error("b did not round-trip");
+"#;
+    std::fs::write(dir.join("run.mjs"), script).unwrap();
+
+    let out = Command::new(&node).current_dir(&dir).arg("run.mjs").output().expect("failed to run Node");
+    assert!(
+        out.status.success(),
+        "the raw float round trip failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 #[test]
 fn a_scaled_type_exposes_both_representations() {
     // §4: the physical value to callers, the raw integer for exact round trips.

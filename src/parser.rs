@@ -1058,12 +1058,11 @@ impl<'a> Parser<'a> {
         if name == "bool" {
             return Ok(ScalarType { kind: ScalarKind::Bool, span });
         }
-        if name == "f32" || name == "f64" {
-            let d = self
-                .diag(span, format!("`{name}` is not a wire type"), "floats never appear on the wire")
-                .note("defgen has no raw floating-point wire type; a float only exists as the decoded form of a `scaled` declaration (§2, §4)")
-                .help("declare `scaled Name: i16 as f32 (scale: 0.01);` and use `Name` as the field type");
-            return Err(self.emit(d));
+        if name == "f32" {
+            return Ok(ScalarType { kind: ScalarKind::Float(FloatType::F32), span });
+        }
+        if name == "f64" {
+            return Ok(ScalarType { kind: ScalarKind::Float(FloatType::F64), span });
         }
         if let Some(kind) = self.classify_int_type(name, span)? {
             return Ok(ScalarType { kind, span });
@@ -1271,6 +1270,16 @@ impl<'a> Parser<'a> {
                         "expected `uN`",
                     )
                     .help("use `u1` to mean a single bit");
+                Err(self.emit(d))
+            }
+            ScalarKind::Float(f) => {
+                let d = self
+                    .diag(
+                        ty.span,
+                        format!("{what} must be an unsigned integer type, found `{}`", f.as_str()),
+                        "expected `uN`",
+                    )
+                    .note("a container's width is a bit count, not a value (§6)");
                 Err(self.emit(d))
             }
             ScalarKind::Named(name) => {

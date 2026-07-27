@@ -177,6 +177,9 @@ pub enum ScalarKind {
     Int(u32),
     /// `bool` — sugar for `u1` (§2).
     Bool,
+    /// `f32`/`f64` — an IEEE-754 value carried directly on the wire, byte
+    /// order following the same rule as any other multi-byte scalar (§2, §8).
+    Float(FloatType),
     /// A declared `alias`/`scaled`/`enum`/tagged-union/`struct` name. Resolved
     /// by the semantic pass, not here.
     Named(Ident),
@@ -188,6 +191,7 @@ impl ScalarType {
         match &self.kind {
             ScalarKind::UInt(n) | ScalarKind::Int(n) => Some(*n),
             ScalarKind::Bool => Some(1),
+            ScalarKind::Float(f) => Some(f.bits()),
             ScalarKind::Named(_) => None,
         }
     }
@@ -300,6 +304,14 @@ impl FloatType {
         match self {
             FloatType::F32 => "f32",
             FloatType::F64 => "f64",
+        }
+    }
+
+    /// On-wire/in-memory width: 32 for `f32`, 64 for `f64`.
+    pub fn bits(self) -> u32 {
+        match self {
+            FloatType::F32 => 32,
+            FloatType::F64 => 64,
         }
     }
 }

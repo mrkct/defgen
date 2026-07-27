@@ -390,6 +390,55 @@ fn an_alias_keeps_the_name_the_author_declared() {
     assert_contains(&module, "    volume: Volume = 0");
 }
 
+/// A raw `f32`/`f64` field (§2) is carried as `float` and encodes to exactly
+/// the IEEE-754 bit pattern, little-endian on the wire — this is what
+/// actually pins the byte layout down, complementing the C backend's version
+/// of the same test (§13).
+#[test]
+fn raw_floats_round_trip_ieee754_bit_patterns() {
+    let Some(python) = python() else {
+        eprintln!("skipping the raw float round trip: no Python 3.10+ interpreter found");
+        return;
+    };
+    let src = schema(
+        "struct Floats: u96 { a: f32, b: f64, }\n\
+         service S(uuid: \"180a\") {\n\
+             characteristic C(uuid: \"2a00\", properties: [read]): Floats;\n\
+         }",
+    );
+    let module = module_of(&src, "floats");
+    assert_contains(&module, "a: float = 0.0");
+    assert_contains(&module, "b: float = 0.0");
+
+    let dir = scratch("raw_floats");
+    std::fs::write(dir.join("floats.py"), module).unwrap();
+    let script = r#"
+import struct
+import floats
+
+v = floats.Floats(a=1.5, b=-2.25)
+buf = v.encode()
+assert buf[0:4] == struct.pack("<f", 1.5), buf[0:4]
+assert buf[4:12] == struct.pack("<d", -2.25), buf[4:12]
+
+back = floats.Floats.decode(buf)
+assert back.a == 1.5, back.a
+assert back.b == -2.25, back.b
+"#;
+    std::fs::write(dir.join("run.py"), script).unwrap();
+
+    let out = Command::new(&python)
+        .current_dir(&dir)
+        .args(["-W", "error", "run.py"])
+        .output()
+        .expect("failed to run the Python interpreter");
+    assert!(
+        out.status.success(),
+        "the raw float round trip failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 #[test]
 fn a_scaled_type_exposes_both_representations() {
     // §4: the physical value to callers, the raw integer for exact round trips.

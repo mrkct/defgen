@@ -382,7 +382,7 @@ impl<'m> Emitter<'m> {
     fn scan_type(&mut self, ty: &WireType) {
         match ty {
             WireType::UInt(n) | WireType::Int(n) => self.needs.wide |= carrier_bits(*n) > 64,
-            WireType::Bool | WireType::Named(_) => {}
+            WireType::Bool | WireType::Float(_) | WireType::Named(_) => {}
             WireType::Str { .. } => self.needs.utf8 = true,
             WireType::Array { elem, .. } | WireType::VarArray { elem, .. } => self.scan_type(elem),
         }
@@ -408,9 +408,18 @@ impl<'m> Emitter<'m> {
             WireType::UInt(n) => Self::int_type(*n, false),
             WireType::Int(n) => Self::int_type(*n, true),
             WireType::Bool => "bool".to_string(),
+            WireType::Float(f) => Self::float_c_type(*f).to_string(),
             WireType::Named(id) => ident(&self.m.get(*id).name),
             WireType::Array { elem, .. } | WireType::VarArray { elem, .. } => self.c_type(elem),
             WireType::Str { .. } => "char".to_string(),
+        }
+    }
+
+    /// The C type a raw `f32`/`f64` wire value is held in (§2).
+    fn float_c_type(f: FloatType) -> &'static str {
+        match f {
+            FloatType::F32 => "float",
+            FloatType::F64 => "double",
         }
     }
 
@@ -1372,6 +1381,7 @@ impl<'m> Emitter<'m> {
                     ctx.buf, ctx.size, ctx.big
                 ),
             ),
+            WireType::Float(f) => self.pack_float(ind, ctx, expr, *f, off),
             WireType::Named(id) => self.pack_named(ind, ctx, expr, *id, off),
             WireType::Array { elem, count } => {
                 let elem_bits = self.m.layout_of(elem).fixed_bits;
@@ -1393,6 +1403,7 @@ impl<'m> Emitter<'m> {
                 ind,
                 &format!("{expr} = defgen__get({}, {}, {}, {off}, 1u) != 0;", ctx.buf, ctx.size, ctx.big),
             ),
+            WireType::Float(f) => self.unpack_float(ind, ctx, expr, *f, off),
             WireType::Named(id) => self.unpack_named(ind, ctx, expr, *id, off),
             WireType::Array { elem, count } => {
                 let elem_bits = self.m.layout_of(elem).fixed_bits;
@@ -1471,6 +1482,42 @@ impl<'m> Emitter<'m> {
         } else {
             self.line(ind, &format!("{expr} = ({ty})({read});"));
         }
+    }
+
+    /// Writes a raw `f32`/`f64` as its IEEE-754 bit pattern, going through
+    /// `memcpy` rather than a pointer cast so strict aliasing never bites
+    /// (§2). The bits then flow through `defgen__put` exactly like an
+    /// unsigned integer of the same width, so byte order is applied the same
+    /// way as everything else on the wire (§8).
+    fn pack_float(&mut self, ind: usize, ctx: &Ctx, expr: &str, f: FloatType, off: &str) {
+        let bits = f.bits();
+        let uty = if bits == 32 { "uint32_t" } else { "uint64_t" };
+        let tmp = self.tmp("bits");
+        self.line(ind, "{");
+        self.line(ind + 1, &format!("{uty} {tmp};"));
+        self.line(ind + 1, &format!("memcpy(&{tmp}, &({expr}), sizeof({tmp}));"));
+        self.line(
+            ind + 1,
+            &format!("defgen__put({}, {}, {}, {off}, {bits}u, (uint64_t){tmp});", ctx.buf, ctx.size, ctx.big),
+        );
+        self.line(ind, "}");
+    }
+
+    /// Reads `bits` bits and reinterprets them as `f`'s IEEE-754 pattern.
+    fn unpack_float(&mut self, ind: usize, ctx: &Ctx, expr: &str, f: FloatType, off: &str) {
+        let bits = f.bits();
+        let uty = if bits == 32 { "uint32_t" } else { "uint64_t" };
+        let tmp = self.tmp("bits");
+        self.line(ind, "{");
+        self.line(
+            ind + 1,
+            &format!(
+                "{uty} {tmp} = ({uty})defgen__get({}, {}, {}, {off}, {bits}u);",
+                ctx.buf, ctx.size, ctx.big
+            ),
+        );
+        self.line(ind + 1, &format!("memcpy(&({expr}), &{tmp}, sizeof({tmp}));"));
+        self.line(ind, "}");
     }
 
     fn pack_named(&mut self, ind: usize, ctx: &Ctx, expr: &str, id: TypeId, off: &str) {

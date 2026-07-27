@@ -98,12 +98,15 @@ byte order (§8 — only root containers do) and so cannot carry
 | `uN` | unsigned integer, exactly `N` bits, `1 <= N <= 128` |
 | `iN` | two's-complement signed integer, exactly `N` bits, `2 <= N <= 128` |
 | `bool` | sugar for `u1`; `0`/`1` decode to `false`/`true` |
+| `f32` | IEEE-754 binary32, 32 bits |
+| `f64` | IEEE-754 binary64, 64 bits |
 
-There is no raw floating-point wire type — `f32`/`f64` exist only as the
-decoded, in-memory representation a `scaled` declaration (§4) produces,
-never as something a field can be directly backed by on the wire. This
-sidesteps IEEE-754 endianness and precision questions that real devices
-don't deal with either.
+A `f32`/`f64` field's wire representation is its IEEE-754 bit pattern,
+byte-ordered exactly like any other multi-byte scalar (§8) — there is no
+separate float-endianness rule to learn. This is also the decoded,
+in-memory representation a `scaled` declaration (§4) produces; `scaled`
+exists for devices whose wire format is a fixed-point integer instead, and
+is unrelated to whether `f32`/`f64` may back a field directly.
 
 A field's on-wire width is always exactly the bit width of its declared
 type. There is no truncating/reinterpreting a wider type into a narrower
@@ -621,7 +624,6 @@ exists.
   length always comes from the transport/buffer, never from a length
   value stored in the payload itself (§6.3).
 - A minimum-length constraint on a variable-length field (only a `max`).
-- Raw floating-point wire types (only `scaled` fixed-point, §4).
 - Per-field byte-swap overrides inside an otherwise-consistent container
   (§8).
 - GATT descriptors, security/permission metadata, encryption/signing.
