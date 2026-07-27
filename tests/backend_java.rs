@@ -154,7 +154,7 @@ fn assert_compiles(file: &(String, String), name: &str) {
     std::fs::write(&src, &file.1).unwrap();
 
     let out = Command::new(&javac)
-        .args(["-Xlint:all", "-Werror", "-d"])
+        .args(["-encoding", "UTF-8", "-Xlint:all", "-Werror", "-d"])
         .arg(dir.join("out"))
         .arg(&src)
         .output()
@@ -992,7 +992,7 @@ fn the_generated_file_round_trips_the_worked_example() {
 
     let classes = dir.join("out");
     let build = Command::new(&javac)
-        .args(["-Xlint:all", "-Werror", "-d"])
+        .args(["-encoding", "UTF-8", "-Xlint:all", "-Werror", "-d"])
         .arg(&classes)
         .arg(&schema_path)
         .arg(&fixture_path)
