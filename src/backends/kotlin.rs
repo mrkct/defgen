@@ -79,7 +79,7 @@
 use super::{Backend, Generated, GeneratedFile, Options, camel, sanitize_stem, screaming};
 use crate::ast::{Docs, Endianness, FloatType, Property};
 use crate::model::{
-    Enum, Field, FieldRole, Model, Scaled, Struct, TypeDef, TypeKind, Union, WireType, carrier_bits,
+    Const, Enum, Field, FieldRole, Model, Scaled, Struct, TypeDef, TypeKind, Union, WireType, carrier_bits,
 };
 
 pub struct KotlinBackend;
@@ -239,6 +239,34 @@ fn uint_val_keyword(bits: u32) -> &'static str {
 /// suffix, which tops out at `ULong`.
 fn bigint_lit(value: u128) -> String {
     format!("BigInteger(\"{value}\")")
+}
+
+/// A literal of `carrier_type(bits, true)` naming exactly `value` — used by a
+/// signed `const` declaration (§3.1), the only place a compile-time signed
+/// value shows up outside a fixed-carrier field. `Byte`/`Short` have no
+/// literal suffix of their own, so those go through an `Int` literal (always
+/// in range) and an explicit conversion, mirroring `uint_lit`; a negative one
+/// needs parentheses first, since `.toByte()`/`.toShort()` binds tighter than
+/// unary minus (`-40.toShort()` is `-(40.toShort())`, not what is wanted).
+fn int_lit(value: i128, bits: u32) -> String {
+    match carrier_bits(bits) {
+        8 => format!("({value}).toByte()"),
+        16 => format!("({value}).toShort()"),
+        32 => format!("{value}"),
+        64 => format!("{value}L"),
+        128 => format!("BigInteger(\"{value}\")"),
+        _ => unreachable!(),
+    }
+}
+
+/// `const val` if `int_lit(_, bits)` produces a literal kotlinc accepts as a
+/// compile-time constant, `val` otherwise — the signed counterpart of
+/// [`uint_val_keyword`].
+fn int_val_keyword(bits: u32) -> &'static str {
+    match carrier_bits(bits) {
+        32 | 64 => "const val",
+        _ => "val",
+    }
 }
 
 /// The expression converting a value already in `expr` (of
@@ -834,6 +862,23 @@ impl<'m> Emitter<'m> {
                 self.entry_functions(def);
             }
         }
+        if !m.consts.is_empty() {
+            self.banner("Constants");
+            for c in &m.consts {
+                self.declare_const(c);
+            }
+        }
+    }
+
+    // -- const (§3.1) -----------------------------------------------------------
+
+    fn declare_const(&mut self, c: &Const) {
+        let ty = carrier_type(c.bits, c.signed);
+        let keyword = if c.signed { int_val_keyword(c.bits) } else { uint_val_keyword(c.bits) };
+        let value = if c.signed { int_lit(c.as_i128(), c.bits) } else { uint_lit(c.magnitude, c.bits) };
+        self.docs_with(0, &c.docs, &[]);
+        self.line(0, &format!("{keyword} {}: {ty} = {value}", screaming(&c.name)));
+        self.blank();
     }
 
     /// Whether `def` is bound to a characteristic (§10) but has no class of

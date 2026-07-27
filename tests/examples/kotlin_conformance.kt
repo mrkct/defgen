@@ -389,6 +389,11 @@ fun testMetadata() {
     check(GattProperty.READ in statusChar.properties, "and support `in`")
 }
 
+fun testConstants() {
+    check(MAX_WRITE_LENGTH == 32.toUByte(), "MAX_WRITE_LENGTH")
+    check(MIN_RATED_TEMPERATURE == (-40).toShort(), "MIN_RATED_TEMPERATURE")
+}
+
 fun main() {
     testStatus()
     testOpenEnum()
@@ -400,6 +405,7 @@ fun main() {
     testDiagnosticLabel()
     testOwnerName()
     testMetadata()
+    testConstants()
 
     if (failures == 0) {
         println("ok")

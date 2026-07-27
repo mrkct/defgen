@@ -9,6 +9,15 @@ endian: little;
 
 ---
 
+/// Highest `OwnerName`/`DiagnosticLabel` write this firmware revision
+/// accepts, even though the wire type itself allows more (§3.1: a constant
+/// is a plain value for generated code, not a wire-level bound).
+const MaxWriteLength: u8 = 32;
+
+/// Coldest ambient reading (§4's `Temperature` scale) this device is rated
+/// to operate at. Negative, to demonstrate a signed constant.
+const MinRatedTemperature: i16 = -40;
+
 /// Playback volume. The device only has 4 bits of resolution.
 alias Volume = u4;
 

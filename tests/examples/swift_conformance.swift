@@ -394,6 +394,11 @@ func testMetadata() throws {
     check(statusChar.properties.contains(.read), "and support `.contains`")
 }
 
+func testConstants() {
+    check(MAX_WRITE_LENGTH == 32, "MAX_WRITE_LENGTH")
+    check(MIN_RATED_TEMPERATURE == -40, "MIN_RATED_TEMPERATURE")
+}
+
 func main() throws {
     try testStatus()
     try testOpenEnum()
@@ -405,6 +410,7 @@ func main() throws {
     try testDiagnosticLabel()
     try testOwnerName()
     try testMetadata()
+    testConstants()
 
     if failures == 0 {
         print("ok")

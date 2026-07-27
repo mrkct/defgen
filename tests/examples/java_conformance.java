@@ -470,6 +470,11 @@ public class Conformance {
         check(statusChar.properties().contains(Commands.GattProperty.READ), "and support membership tests");
     }
 
+    static void testConstants() {
+        check(Commands.MAX_WRITE_LENGTH == 32, "MAX_WRITE_LENGTH");
+        check(Commands.MIN_RATED_TEMPERATURE == -40, "MIN_RATED_TEMPERATURE");
+    }
+
     public static void main(String[] args) throws Commands.DefgenError {
         testStatus();
         testOpenEnum();
@@ -481,6 +486,7 @@ public class Conformance {
         testDiagnosticLabel();
         testOwnerName();
         testMetadata();
+        testConstants();
 
         if (failures == 0) {
             System.out.println("ok");

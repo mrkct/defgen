@@ -286,6 +286,58 @@ fn a_union_variant_cannot_hold_a_variable_length_field() {
 }
 
 // ---------------------------------------------------------------------------
+// Constants (§3.1)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_constant_that_overflows_its_type_is_rejected() {
+    rejects("const T: u8 = 256;", "does not fit in its declared type `u8`");
+    rejects("const T: i8 = 128;", "does not fit in its declared type `i8`");
+    rejects("const T: i8 = -129;", "does not fit in its declared type `i8`");
+}
+
+#[test]
+fn a_negative_unsigned_constant_is_rejected_with_a_signedness_hint() {
+    let src = format!("{HEADER}const T: u8 = -1;");
+    let compiled = compile(&src);
+    assert!(compiled.model.is_none());
+    let rendered: Vec<String> =
+        compiled.diagnostics.iter().map(|d| d.render_plain("test.defs", &src)).collect();
+    assert!(
+        rendered.iter().any(|m| m.contains("`uN` has no sign; use an `iN` type for a negative constant")),
+        "{rendered:?}"
+    );
+}
+
+#[test]
+fn a_constant_at_its_types_exact_bounds_is_accepted() {
+    accepts("const Max: u8 = 255;\nconst Min: i8 = -128;\nconst MaxSigned: i8 = 127;");
+}
+
+#[test]
+fn duplicate_constant_names_are_rejected() {
+    rejects("const T: u8 = 1;\nconst T: u8 = 2;", "declared more than once");
+}
+
+#[test]
+fn a_constant_cannot_be_used_as_a_field_type() {
+    rejects("const T: u8 = 1;\nstruct S: u8 { x: T }", "`T` is a constant, not a type");
+}
+
+#[test]
+fn a_constant_cannot_be_bound_to_a_characteristic() {
+    rejects(
+        concat!(
+            "const T: u8 = 1;\n",
+            "service Svc(uuid: \"180a\") {\n",
+            "    characteristic C(uuid: \"2a19\", properties: [read]): T;\n",
+            "}\n",
+        ),
+        "`T` is a constant, not a type",
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Endianness (§8)
 // ---------------------------------------------------------------------------
 

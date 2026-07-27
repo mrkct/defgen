@@ -73,8 +73,8 @@
 use super::{Backend, Generated, GeneratedFile, Options, sanitize_stem, screaming, snake};
 use crate::ast::{Docs, Endianness, FloatType, Property};
 use crate::model::{
-    ElseVariant, Enum, Field, FieldRole, Model, Scaled, Struct, TypeDef, TypeId, TypeKind, Union, WireType,
-    carrier_bits, int_range,
+    Const, ElseVariant, Enum, Field, FieldRole, Model, Scaled, Struct, TypeDef, TypeId, TypeKind, Union,
+    WireType, carrier_bits, int_range,
 };
 
 pub struct CBackend;
@@ -357,6 +357,9 @@ impl<'m> Emitter<'m> {
                 }
             }
         }
+        for c in &m.consts {
+            self.needs.wide |= carrier_bits(c.bits) > 64;
+        }
     }
 
     fn scan_else(&mut self, arm: Option<&ElseVariant>) {
@@ -446,6 +449,18 @@ impl<'m> Emitter<'m> {
         } else {
             let (hi, lo) = ((value >> 64) as u64, value as u64);
             format!("((((defgen_u128)UINT64_C({})) << 64) | UINT64_C({}))", write(hi), write(lo))
+        }
+    }
+
+    /// A signed constant of any declared width, as a C expression (§3.1).
+    /// Above 64 bits, `__int128` has no literal of its own either, so the
+    /// value is round-tripped through the same unsigned assembly `uint_lit`
+    /// uses: the bit pattern is identical either way, two's complement (§2).
+    fn int_lit(value: i128, carrier: u32) -> String {
+        if carrier <= 64 {
+            format!("INT64_C({value})")
+        } else {
+            format!("((defgen_i128){})", Self::uint_lit(value as u128, carrier, false))
         }
     }
 
@@ -792,6 +807,27 @@ impl<'m> Emitter<'m> {
             self.declare(def);
             self.blank();
         }
+        if !m.consts.is_empty() {
+            self.banner("Named constants");
+            for c in &m.consts {
+                self.declare_const(c);
+                self.blank();
+            }
+        }
+    }
+
+    /// `const Name: uN|iN = <literal>;` (§3.1) — a `#define`, the same idiom
+    /// an enum variant's value already gets.
+    fn declare_const(&mut self, c: &Const) {
+        self.docs(0, &c.docs);
+        let ty = Self::int_type(c.bits, c.signed);
+        let carrier = carrier_bits(c.bits);
+        let value = if c.signed {
+            Self::int_lit(c.as_i128(), carrier)
+        } else {
+            Self::uint_lit(c.magnitude, carrier, false)
+        };
+        self.line(0, &format!("#define {} (({ty}){value})", screaming(&c.name)));
     }
 
     fn declare(&mut self, def: &'m TypeDef) {

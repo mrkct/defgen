@@ -204,3 +204,24 @@ fn empty_service_body_parses() {
     let s = body("service Empty(uuid: \"x\") { }");
     assert_eq!(s.services().next().unwrap().characteristics.len(), 0);
 }
+
+#[test]
+fn constants_parse_signed_unsigned_and_hex() {
+    let s = body(
+        "\
+const MaxRetries: u8 = 5;
+const MinTemperature: i16 = -40;
+const Big: u32 = 0xffff;
+",
+    );
+    let Some(Decl::Const(max_retries)) = s.decl("MaxRetries") else { panic!("MaxRetries") };
+    assert_eq!(max_retries.ty.kind, ScalarKind::UInt(8));
+    assert_eq!(max_retries.value.value, ConstLit { magnitude: 5, negative: false });
+
+    let Some(Decl::Const(min_temp)) = s.decl("MinTemperature") else { panic!("MinTemperature") };
+    assert_eq!(min_temp.ty.kind, ScalarKind::Int(16));
+    assert_eq!(min_temp.value.value, ConstLit { magnitude: 40, negative: true });
+
+    let Some(Decl::Const(big)) = s.decl("Big") else { panic!("Big") };
+    assert_eq!(big.value.value, ConstLit { magnitude: 0xffff, negative: false });
+}

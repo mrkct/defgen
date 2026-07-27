@@ -462,6 +462,11 @@ function testMetadata() {
   );
 }
 
+function testConstants() {
+  check(m.MAX_WRITE_LENGTH === 32, "MAX_WRITE_LENGTH");
+  check(m.MIN_RATED_TEMPERATURE === -40, "MIN_RATED_TEMPERATURE");
+}
+
 function main() {
   testStatus();
   testOpenEnum();
@@ -472,6 +477,7 @@ function main() {
   testDiagnosticLabel();
   testOwnerName();
   testMetadata();
+  testConstants();
 
   if (failures === 0) {
     console.log("ok");

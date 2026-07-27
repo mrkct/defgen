@@ -29,6 +29,8 @@ fn declaration_order_and_kinds() {
     assert_eq!(
         names,
         vec![
+            ("constant", "MaxWriteLength"),
+            ("constant", "MinRatedTemperature"),
             ("alias", "Volume"),
             ("alias", "OwnerName"),
             ("scaled type", "Temperature"),
@@ -284,5 +286,5 @@ fn spans_point_at_the_written_source() {
     assert_eq!(status.name.span.text(EXAMPLE), "Status");
     assert_eq!(status.width_bits.unwrap().span.text(EXAMPLE), "u64");
     let (line, col) = defgen::span::line_col(EXAMPLE, status.name.span.start);
-    assert_eq!((line, col), (52, 8));
+    assert_eq!((line, col), (61, 8));
 }

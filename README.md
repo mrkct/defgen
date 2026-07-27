@@ -72,8 +72,8 @@ service Light(uuid: "0000ffe0-0000-1000-8000-00805f9b34fb") {
 ```
 
 An optional `endian` header, then type declarations (aliases, enums, structs,
-scaled values) and `service`/`characteristic` bindings — everything needed to
-derive an exact bit layout at compile time.
+scaled values, `const`ants) and `service`/`characteristic` bindings —
+everything needed to derive an exact bit layout at compile time.
 
 ## Installation
 

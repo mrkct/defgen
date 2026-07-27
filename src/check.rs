@@ -49,6 +49,7 @@ pub fn check(schema: &Schema) -> Checked {
         endian: schema.endian.map_or(ast::Endianness::Little, |e| e.value),
         types: checker.types,
         services: checker.services,
+        consts: checker.consts,
     });
     Checked { model, diagnostics }
 }
@@ -62,6 +63,7 @@ struct Checker<'a> {
     diags: Vec<Diagnostic>,
     types: Vec<TypeDef>,
     services: Vec<Service>,
+    consts: Vec<Const>,
     /// Declaration index of the first declaration of each name. Resolution
     /// compares it against [`Checker::current`] to tell "declared earlier"
     /// from "declared later" (§9) from "not declared at all".
@@ -94,6 +96,7 @@ impl<'a> Checker<'a> {
             diags: Vec::new(),
             types: Vec::new(),
             services: Vec::new(),
+            consts: Vec::new(),
             first_decl: HashMap::new(),
             decl_type: vec![None; schema.decls.len()],
             all_names: Vec::new(),
@@ -115,6 +118,10 @@ impl<'a> Checker<'a> {
                 Decl::Service(s) => {
                     let service = self.check_service(s);
                     self.services.push(service);
+                }
+                Decl::Const(c) => {
+                    let cst = self.check_const(c);
+                    self.consts.push(cst);
                 }
                 _ => self.check_type_decl(index, decl),
             }
@@ -168,6 +175,7 @@ impl<'a> Checker<'a> {
             Decl::Enum(d) => self.check_enum(d),
             Decl::Union(d) => self.check_union(d),
             Decl::Struct(d) => self.check_struct(d),
+            Decl::Const(_) => unreachable!("constants are checked separately"),
             Decl::Service(_) => unreachable!("services are checked separately"),
         };
 
@@ -566,6 +574,51 @@ impl<'a> Checker<'a> {
         self.error(e);
     }
 
+    /// `const Name: uN|iN = <literal>;` (§3.1). No `TypeId` is produced: a
+    /// constant has no wire form, so nothing can resolve to it as a type.
+    fn check_const(&mut self, d: &'a ast::ConstDecl) -> Const {
+        let (bits, signed) = match d.ty.kind {
+            ast::ScalarKind::UInt(n) => (n, false),
+            ast::ScalarKind::Int(n) => (n, true),
+            _ => unreachable!("the parser only accepts `uN`/`iN` here"),
+        };
+
+        let lit = d.value.value;
+        let (min, max) = int_range(bits, signed);
+        // `min` is always <= 0 (§2), so its magnitude is exactly the largest
+        // legal negative value's absolute value.
+        let in_range =
+            if lit.negative { signed && lit.magnitude <= min.unsigned_abs() } else { lit.magnitude <= max };
+
+        if !in_range {
+            let ty_str = format!("{}{bits}", if signed { "i" } else { "u" });
+            let value_str =
+                if lit.negative { format!("-{}", lit.magnitude) } else { lit.magnitude.to_string() };
+            let mut e = Diagnostic::error(format!(
+                "constant `{}` does not fit in its declared type `{ty_str}`",
+                d.name.name
+            ))
+            .primary(d.value.span, format!("{value_str} does not fit in {ty_str}"))
+            .note(format!("a `{ty_str}` value must be in {min}..={max} (§2, §3.1)"));
+            e = if !signed && lit.negative {
+                e.help("`uN` has no sign; use an `iN` type for a negative constant")
+            } else {
+                e.help("widen the declared type so it can hold this exact value")
+            };
+            self.error(e);
+        }
+
+        Const {
+            docs: d.docs.clone(),
+            span: d.span,
+            name: d.name.name.clone(),
+            bits,
+            signed,
+            magnitude: lit.magnitude,
+            negative: lit.negative,
+        }
+    }
+
     fn check_variant_name(
         &mut self,
         seen: &mut HashMap<&'a str, Span>,
@@ -848,14 +901,24 @@ impl<'a> Checker<'a> {
                     }
                     Some(id)
                 }
-                // A `service`, or a type declaration that bailed out.
+                // A `service`, a `const`, or a type declaration that bailed out.
                 None => {
-                    if matches!(self.schema.decls[index], Decl::Service(_)) {
-                        let e = Diagnostic::error(format!("`{}` is a service, not a type", ident.name))
-                            .primary(ident.span, format!("cannot use a service as {}", using.as_str()))
-                            .secondary(self.schema.decls[index].name().span, "declared here")
-                            .note("a service groups characteristic bindings; it has no wire representation of its own (§10)");
-                        self.error(e);
+                    match &self.schema.decls[index] {
+                        Decl::Service(_) => {
+                            let e = Diagnostic::error(format!("`{}` is a service, not a type", ident.name))
+                                .primary(ident.span, format!("cannot use a service as {}", using.as_str()))
+                                .secondary(self.schema.decls[index].name().span, "declared here")
+                                .note("a service groups characteristic bindings; it has no wire representation of its own (§10)");
+                            self.error(e);
+                        }
+                        Decl::Const(_) => {
+                            let e = Diagnostic::error(format!("`{}` is a constant, not a type", ident.name))
+                                .primary(ident.span, format!("cannot use a constant as {}", using.as_str()))
+                                .secondary(self.schema.decls[index].name().span, "declared here")
+                                .note("a `const` is a plain value for generated code to use directly; it has no wire representation and cannot appear as a field or characteristic type (§3.1)");
+                            self.error(e);
+                        }
+                        _ => {}
                     }
                     self.tainted = true;
                     None

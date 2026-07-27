@@ -62,6 +62,7 @@ declaration_body
     | enum_decl
     | union_decl
     | struct_decl
+    | const_decl
     | service_decl
     ;
 
@@ -96,6 +97,13 @@ scaled_arg
 
 float_type
     = "f32" | "f64"
+    ;
+
+
+(* --- Constants (§3.1) ------------------------------------------------------ *)
+
+const_decl
+    = "const" , IDENT , ":" , integer_type , "=" , [ "-" ] , INT , ";"
     ;
 
 
@@ -237,7 +245,7 @@ property
    `bool`) is contextual: it is lexed as IDENT and recognized by position, so
    it stays usable as a field or type name. *)
 keyword
-    = "alias" | "as" | "characteristic" | "else" | "enum" | "padding"
+    = "alias" | "as" | "characteristic" | "const" | "else" | "enum" | "padding"
     | "reserved" | "scaled" | "service" | "string" | "struct"
     ;
 

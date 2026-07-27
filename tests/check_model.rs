@@ -332,6 +332,36 @@ fn every_characteristic_is_a_whole_number_of_bytes() {
 }
 
 #[test]
+fn constants_are_resolved_with_no_type_of_their_own() {
+    let model = example();
+    assert!(
+        model.types.iter().all(|t| t.name != "MaxWriteLength"),
+        "a const is not a TypeDef, so it must not show up in model.types"
+    );
+
+    let names: Vec<&str> = model.consts.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, vec!["MaxWriteLength", "MinRatedTemperature"]);
+
+    let max_write = model.consts.iter().find(|c| c.name == "MaxWriteLength").unwrap();
+    assert_eq!((max_write.bits, max_write.signed), (8, false));
+    assert_eq!((max_write.magnitude, max_write.negative), (32, false));
+
+    let min_temp = model.consts.iter().find(|c| c.name == "MinRatedTemperature").unwrap();
+    assert_eq!((min_temp.bits, min_temp.signed), (16, true));
+    assert_eq!((min_temp.magnitude, min_temp.negative), (40, true));
+    assert_eq!(min_temp.as_i128(), -40);
+}
+
+#[test]
+fn a_signed_constant_at_i128_min_round_trips_exactly() {
+    let src = "const T: i128 = -170141183460469231731687303715884105728;";
+    let compiled = defgen::compile(src);
+    assert!(compiled.diagnostics.is_empty(), "{:?}", compiled.diagnostics);
+    let model = compiled.model.expect("model");
+    assert_eq!(model.consts[0].as_i128(), i128::MIN);
+}
+
+#[test]
 fn underlying_follows_alias_chains() {
     let model = example();
     let volume = ty(&model, "Volume").id;

@@ -90,7 +90,7 @@
 use super::{Backend, Generated, GeneratedFile, Options, camel, sanitize_stem, screaming};
 use crate::ast::{Docs, Endianness, FloatType, Property};
 use crate::model::{
-    Enum, Field, FieldRole, Model, Scaled, Struct, TypeDef, TypeKind, Union, UnionVariant, WireType,
+    Const, Enum, Field, FieldRole, Model, Scaled, Struct, TypeDef, TypeKind, Union, UnionVariant, WireType,
     carrier_bits,
 };
 
@@ -1086,6 +1086,22 @@ impl<'m> Emitter<'m> {
                 self.entry_functions(def);
             }
         }
+        if !m.consts.is_empty() {
+            self.banner(1, "Constants");
+            for c in &m.consts {
+                self.declare_const(c);
+            }
+        }
+    }
+
+    // -- const (§3.1) -----------------------------------------------------------
+
+    fn declare_const(&mut self, c: &Const) {
+        let ty = carrier_type(c.bits, c.signed);
+        let value = if c.signed { int_lit(c.as_i128(), c.bits, true) } else { uint_lit(c.magnitude, c.bits) };
+        self.comment(1, &c.docs, &[]);
+        self.line(1, &format!("public static final {ty} {} = {value};", screaming(&c.name)));
+        self.blank();
     }
 
     /// Whether `def` is bound to a characteristic (§10) but has no type of its

@@ -355,6 +355,19 @@ fn a_scaled_type_exposes_both_representations() {
 }
 
 #[test]
+fn constants_become_static_final_fields() {
+    // §3.1: no wire form, no codec — just a named value.
+    let file = file_of(
+        &schema("const MaxRetries: u8 = 5;\nconst MinTemperature: i16 = -40;\nconst Big: u128 = 5;"),
+        "s",
+    );
+    assert_contains(&file, "public static final short MAX_RETRIES = (short) 5;");
+    assert_contains(&file, "public static final short MIN_TEMPERATURE = (short) -40;");
+    // No Java literal reaches 128 bits (§2), so this goes through `BigInteger`.
+    assert_contains(&file, "public static final BigInteger BIG = new BigInteger(\"5\");");
+}
+
+#[test]
 fn scaled_rounding_rounds_half_away_from_zero() {
     // §4, §13: the backends have to agree on a raw integer down to the last
     // unit, and the JDK's own Math.round rounds half *up*, which disagrees with

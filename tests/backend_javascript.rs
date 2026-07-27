@@ -467,6 +467,20 @@ fn enum_variants_become_members_of_a_frozen_object() {
 }
 
 #[test]
+fn constants_become_exported_consts() {
+    // §3.1: no wire form, no codec — just a named value.
+    let module = module_of(
+        &schema("const MaxRetries: u8 = 5;\nconst MinTemperature: i16 = -40;\nconst Big: u64 = 5;"),
+        "s",
+    );
+    assert_contains(&module, "export const MAX_RETRIES = 5;");
+    assert_contains(&module, "export const MIN_TEMPERATURE = -40;");
+    // Past a 32-bit carrier, the literal is a `bigint` (§2).
+    assert_contains(&module, "export const BIG = 5n;");
+    assert_contains(&module, "@type {bigint}");
+}
+
+#[test]
 fn an_implicitly_numbered_enum_gets_the_values_the_checker_resolved() {
     // §5: the counter advances from the last explicit value it saw.
     let src = schema(

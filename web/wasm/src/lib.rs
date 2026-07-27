@@ -326,7 +326,24 @@ fn summary(model: &Model) -> String {
         ])
     });
 
-    obj(&[("endian", s(model.endian.as_str())), ("types", arr(types)), ("services", arr(services))])
+    // A `const` (§3.1) has no layout/root/nested/endian of its own — just a
+    // name, a type, and a value — so it gets its own flat row shape rather
+    // than reusing the type table's columns.
+    let consts = model.consts.iter().map(|c| {
+        let value = if c.negative { format!("-{}", c.magnitude) } else { c.magnitude.to_string() };
+        obj(&[
+            ("name", s(&c.name)),
+            ("type", s(&format!("{}{}", if c.signed { "i" } else { "u" }, c.bits))),
+            ("value", big(value)),
+        ])
+    });
+
+    obj(&[
+        ("endian", s(model.endian.as_str())),
+        ("types", arr(types)),
+        ("consts", arr(consts)),
+        ("services", arr(services)),
+    ])
 }
 
 /// A layout as `{fixedBits, maxBytes, variable}`. A variable-length type's

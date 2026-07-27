@@ -453,6 +453,15 @@ static void test_metadata(void) {
     CHECK(memcmp(status_uuid, status_uuid_expected, sizeof(status_uuid)) == 0);
 }
 
+/* ------------------------------------------------------------------------ */
+/* Constants: no wire form, just a shared value (§3.1)                      */
+/* ------------------------------------------------------------------------ */
+
+static void test_constants(void) {
+    CHECK(MAX_WRITE_LENGTH == 32);
+    CHECK(MIN_RATED_TEMPERATURE == -40);
+}
+
 int main(void) {
     test_status();
     test_open_enum();
@@ -465,6 +474,7 @@ int main(void) {
     test_diagnostic_label();
     test_owner_name();
     test_metadata();
+    test_constants();
 
     if (failures == 0) printf("ok\n");
     return failures;
