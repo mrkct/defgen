@@ -306,11 +306,7 @@ fn summary(model: &Model) -> String {
         ])
     });
 
-    obj(&[
-        ("endian", s(model.endian.as_str())),
-        ("types", arr(types)),
-        ("services", arr(services)),
-    ])
+    obj(&[("endian", s(model.endian.as_str())), ("types", arr(types)), ("services", arr(services))])
 }
 
 /// A layout as `{fixedBits, maxBytes, variable}`. A variable-length type's
