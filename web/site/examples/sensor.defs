@@ -1,8 +1,6 @@
 // A weather sensor: physical units on the wire, a fixed-size history, a
 // free-text label, and one legacy value that stayed big-endian.
 
-version = 3;
-
 endian: little;
 
 ---

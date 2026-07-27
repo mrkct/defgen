@@ -75,7 +75,7 @@ for (const file of readdirSync(examples).filter((name) => name.endsWith(".defs")
 }
 
 // A schema with an error has to fail the same way in both, and produce nothing.
-const broken = "version = 1;\nendian: little;\n---\nstruct S: u8 {\n    a: u4,\n}\n";
+const broken = "endian: little;\n---\nstruct S: u8 {\n    a: u4,\n}\n";
 const brokenResult = defgen.compile(broken, { backend: "c", stem: "broken" });
 if (brokenResult.ok || brokenResult.files.length > 0) {
   failures.push("a schema that does not check produced code");

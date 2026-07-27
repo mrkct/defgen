@@ -55,7 +55,7 @@ fn example_header() -> String {
 
 /// A schema with just enough header to be legal, so a test can be one struct.
 fn schema(body: &str) -> String {
-    format!("version = 1;\nendian: little;\n---\n{body}")
+    format!("endian: little;\n---\n{body}")
 }
 
 fn assert_contains(header: &str, needle: &str) {
@@ -111,7 +111,7 @@ fn assert_compiles(header: &str, name: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// Registry (SPEC.md §13 — one backend per target language)
+// Registry (SPEC.md §12 — one backend per target language)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -196,7 +196,7 @@ fn the_rounding_helper_takes_the_integer_part_before_comparing() {
     // `(int64_t)(v + 0.5)` is not `round()`: adding 0.5 to the double just
     // below 0.5 rounds up, so it turns 0.49999999999999994 into 1 — and it is
     // undefined behaviour once v exceeds the integer type's range. Taking the
-    // integer part first is what makes the helper exact, and §14 needs it
+    // integer part first is what makes the helper exact, and §13 needs it
     // exact, because the Python backend has to agree with it unit for unit.
     //
     // `c_conformance.c` is where the resulting values are actually checked;
@@ -204,12 +204,6 @@ fn the_rounding_helper_takes_the_integer_part_before_comparing() {
     let header = example_header();
     assert_contains(&header, "if (!(a < 4503599627370496.0)) return v;");
     assert_contains(&header, "if (a - w >= 0.5) w += 1.0;");
-}
-
-#[test]
-fn the_version_pragma_becomes_a_constant() {
-    // SPEC.md §11: applications log or branch on the schema version.
-    assert_contains(&example_header(), "#define DEFGEN_SCHEMA_VERSION 2");
 }
 
 #[test]
@@ -282,7 +276,7 @@ fn a_scaled_type_exposes_both_representations() {
 
 #[test]
 fn enum_variants_become_screaming_snake_constants() {
-    // §13: casing is converted to the target language's convention.
+    // §12: casing is converted to the target language's convention.
     let header = example_header();
     assert_contains(&header, "typedef uint8_t HearingMode;");
     assert_contains(&header, "#define HEARING_MODE_DEFAULT ((HearingMode)UINT64_C(0))");
@@ -306,7 +300,7 @@ fn an_implicitly_numbered_enum_gets_the_values_the_checker_resolved() {
 
 #[test]
 fn a_closed_enum_rejects_an_unmatched_value_on_both_sides() {
-    // §5, §13: decoding an undeclared value must be fallible.
+    // §5, §12: decoding an undeclared value must be fallible.
     let src = schema("enum Mode: u8 { A = 0, B = 1, }\nstruct S: u8 { m: Mode, }");
     let header = header_of(&src, "closed");
     let occurrences = header.matches("if (!mode_is_known(").count();
@@ -324,7 +318,7 @@ fn an_open_enum_never_fails_to_decode() {
 
 #[test]
 fn a_tagged_union_becomes_a_discriminant_plus_a_c_union() {
-    // §7, §13: the unknown case is a distinct variant carrying `raw`.
+    // §7, §12: the unknown case is a distinct variant carrying `raw`.
     let header = example_header();
     assert_contains(&header, "#define COMMAND_SET_VOLUME ((uint16_t)UINT64_C(0x1))");
     assert_contains(&header, "#define COMMAND_TRIGGER_FACTORY_RESET ((uint16_t)UINT64_C(0xffff))");
@@ -384,7 +378,7 @@ fn names_are_recased_without_mangling_acronyms() {
 }
 
 // ---------------------------------------------------------------------------
-// Codec surface (§13)
+// Codec surface (§12)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -438,7 +432,7 @@ fn byte_order_is_resolved_per_root_container() {
 
 #[test]
 fn a_variable_length_field_is_a_fixed_buffer_plus_a_length() {
-    // §13: C gets no dynamically-allocated string or array.
+    // §12: C gets no dynamically-allocated string or array.
     let header = example_header();
     assert_contains(&header, "char label[24];");
     assert_contains(&header, "size_t label_len;");

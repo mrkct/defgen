@@ -40,19 +40,17 @@ has a corresponding line in that file.
   (Javadoc, KDoc, Python docstring, Swift `///`, Doxygen).
 - Identifiers: `[A-Za-z_][A-Za-z0-9_]*`. Type names conventionally
   `PascalCase`, field names `snake_case`; the compiler does not enforce
-  casing, but each backend's naming-convention conversion (§13) assumes it.
+  casing, but each backend's naming-convention conversion (§12) assumes it.
 - Trailing commas are permitted in every comma-separated list.
 
 ### 1.1 File header
 
-Every file opens with a header section — the file-level pragmas `version`
-and `endian` (§11, §8), each required and each declared exactly once —
-followed by a line containing only `---`, which separates the header from
-the type/service declarations that make up the rest of the file:
+A file may optionally open with a header section — the file-level `endian`
+pragma (§8), declared at most once — followed by a line containing only
+`---`, which separates the header from the type/service declarations that
+make up the rest of the file:
 
 ```
-version = 2;
-
 endian: little;
 
 ---
@@ -61,10 +59,13 @@ alias Volume = u4;
 ...
 ```
 
-Nothing but `version` and `endian` may appear above the `---`; nothing
-appears below it except type and service declarations. This keeps the two
-global, file-wide settings visually separated from the declarations they
-apply to, rather than mixed in among them.
+The header and its `---` are optional as a unit: a file with neither just
+starts straight into its declarations, and the default byte order
+(little-endian) applies. A file that does declare `endian` must still follow
+it with `---` before any declaration. Nothing but `endian` may appear above
+the `---`; nothing appears below it except type and service declarations.
+This keeps the one global, file-wide setting visually separated from the
+declarations it applies to, rather than mixed in among them.
 
 ### 1.2 Attributes
 
@@ -130,7 +131,7 @@ drift apart on it:
   is a **hard error**, never a silent truncation — the same rule as a
   `scaled` value's range check (§4);
 - in a language with no unsigned types, a backend may widen the carrier or
-  wrap it, whatever is idiomatic (§13) — but only the in-memory type
+  wrap it, whatever is idiomatic (§12) — but only the in-memory type
   changes, never the `N` bits on the wire.
 
 There is also no fixed-width `string`. `string` exists only in its
@@ -270,7 +271,7 @@ count is always known at compile time from the schema alone. Element type
 may be a primitive, alias, `scaled` type, enum, or struct (array-of-struct).
 
 Arrays are always fixed-count. There is no variable-length array in v1
-(see §15).
+(see §14).
 
 ### 6.2 Padding and reserved bits
 
@@ -368,7 +369,7 @@ Two variable-length field types exist:
 - **Out of scope for v1:** a variable-length field inside a tagged-union
   variant. Tagged unions remain fully fixed-width (§7) — model a
   variable-length value (like a name) as its own characteristic instead
-  of as one command among several. See §15.
+  of as one command among several. See §14.
 
 ## 7. Tagged unions
 
@@ -401,13 +402,18 @@ enum Command(id: u16): u64 {
   decode error. Because `raw` is an ordinary value, `N - T` must be between
   1 and 128 bits (§2): a union with a container wider than that has to be
   closed.
+- Recommended (not enforced) evolution practice: never remove or renumber
+  an existing variant; add new ones instead. Combined with an `else`
+  fallback, this lets an older SDK talk to newer firmware (and vice versa)
+  without either side crashing on an id it doesn't recognize yet. The same
+  applies to plain-enum values (§5).
 
 ## 8. Endianness
 
 - `endian: little;` or `endian: big;` in the file header (§1.1) sets the
   default byte order for every *root* container (see below) that doesn't
-  override it. It is required and declared exactly once — there is no
-  implicit default, to force the author to make the choice.
+  override it. It may be declared at most once; if the header is omitted
+  entirely, the default is little-endian, the common case for BLE.
 - Any struct or tagged-union enum may override it locally with the
   `#[endian(...)]` attribute (§1.2):
   ```
@@ -431,7 +437,7 @@ enum Command(id: u16): u64 {
   container devices are rare enough that v1 treats this as out of scope;
   model such a field as its own root-level type with its own characteristic
   binding, or as a separate encode/decode step outside generated code (see
-  §15).
+  §14).
 
 ## 9. Nested structs
 
@@ -482,18 +488,7 @@ service HearingAidControl(uuid: "7d8f0000-...") {
   underlying platform BLE library (CoreBluetooth, `BluetoothGatt`, BlueZ,
   `bleak`, ...).
 
-## 11. Versioning
-
-- `version = <int>;` at file scope is a required, once-only pragma,
-  emitted into generated code as a constant so applications can log or
-  branch on schema version.
-- Recommended (not enforced) evolution practice: never remove or
-  renumber an existing plain-enum value or tagged-union variant; add new
-  ones and bump `version`. Combined with `else` fallbacks (§5, §7),
-  this lets an older SDK talk to newer firmware (and vice versa) without
-  either side crashing on a value it doesn't recognize yet.
-
-## 12. Compile-time errors (non-exhaustive checklist)
+## 11. Compile-time errors (non-exhaustive checklist)
 
 - Struct field widths not summing to exactly the declared container width.
 - Tagged-union variant field width exceeding `container_width - tag_width`,
@@ -522,8 +517,8 @@ service HearingAidControl(uuid: "7d8f0000-...") {
 - `max: N`, or a fixed array's `[N]`, that is not a positive integer.
 - Reference to an undeclared type, or a struct referencing itself
   (directly or transitively) as a field.
-- `version`/`endian` missing, declared more than once, or appearing
-  outside the file header (§1.1) — i.e. anywhere but above the `---`.
+- `endian` declared more than once, or appearing below the `---` separator
+  (§1.1) instead of in the file header.
 - Duplicate field names within one struct or variant; duplicate variant
   names within one enum or tagged union; duplicate
   characteristic/service names within a file; two declarations sharing a
@@ -534,7 +529,7 @@ service HearingAidControl(uuid: "7d8f0000-...") {
   the three hex forms (§10); two characteristics of one service, or two
   services in one file, sharing a UUID.
 
-## 13. Codegen contract (per backend: C, Java, JavaScript, Kotlin, Python, Swift)
+## 12. Codegen contract (per backend: C, Java, JavaScript, Kotlin, Python, Swift)
 
 Each backend must, at minimum:
 
@@ -555,7 +550,6 @@ Each backend must, at minimum:
   (`snake_case` fields, for instance, become `camelCase` properties in
   Kotlin/Swift/Java) without changing the schema's own naming rules.
 - Propagate `///` doc comments to the native doc-comment form.
-- Expose the `version` pragma as a named constant.
 - Represent a `string`/`Type[max: N]` field as the target language's
   native string/array type where one exists (Java/JavaScript/Kotlin/Swift/
   Python all have one); reject, at encode time, a value longer than `max`. Validate
@@ -568,7 +562,7 @@ Each backend must, at minimum:
 Exact API shape (builder vs. constructor, mutability, module layout) is a
 per-backend decision and is intentionally not pinned down here.
 
-## 14. Conformance testing (recommended, not part of the schema)
+## 13. Conformance testing (recommended, not part of the schema)
 
 Because six independently-implemented backends must agree on every bit
 of layout, byte order, and unknown-value handling, the recommended
@@ -580,7 +574,7 @@ disagreement in a test run instead of in the field. This document does
 not specify the fixture format; it's a follow-up once the compiler
 exists.
 
-## 15. Explicitly out of scope for v1
+## 14. Explicitly out of scope for v1
 
 - Variable-length fields anywhere but the trailing position of a struct —
   in particular, inside a tagged-union variant (§6.3, §7).
@@ -592,6 +586,8 @@ exists.
 - Per-field byte-swap overrides inside an otherwise-consistent container
   (§8).
 - GATT descriptors, security/permission metadata, encryption/signing.
-- Automatic schema-diffing or migration tooling beyond the `version`
-  constant (§11).
+- Any schema-versioning or schema-diffing/migration mechanism: v1 has no
+  version pragma and no generated version constant at all — evolution
+  discipline (never renumbering a value, adding `else` fallbacks) is a
+  recommendation for schema authors, not something the tooling tracks.
 - Bit orderings other than LSB-first within a container (§6).

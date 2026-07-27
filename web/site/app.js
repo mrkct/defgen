@@ -433,7 +433,6 @@ function renderSummary(summary) {
     el(
       "div",
       { class: "facts" },
-      el("span", { class: "fact" }, "version ", el("b", { text: String(summary.version) })),
       el("span", { class: "fact" }, el("b", { text: summary.endian }), "-endian by default"),
       el("span", { class: "fact", text: plural(summary.types.length, "type") }),
       el("span", { class: "fact", text: plural(summary.services.length, "service") }),

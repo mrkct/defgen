@@ -46,7 +46,7 @@
 //!   `<name>_to_raw`, which keeps the underlying integer reachable for callers
 //!   that want to round-trip without floating-point rounding. `f32` and `f64`
 //!   both map to `float`, Python's only binary float.
-//! * A variable-length field (§6.3) is a native `str` or `list`, as §13 asks.
+//! * A variable-length field (§6.3) is a native `str` or `list`, as §12 asks.
 //!   Decode fails on malformed UTF-8 rather than substituting replacement
 //!   characters — which `bytes.decode("utf-8")` already does, being strict by
 //!   default.
@@ -151,7 +151,7 @@ fn escape_doc(text: &str) -> String {
     text.replace('\\', "\\\\").replace("\"\"\"", "\\\"\\\"\\\"")
 }
 
-/// The lines of a `///` comment (§1, §13).
+/// The lines of a `///` comment (§1, §12).
 fn doc_lines(docs: &Docs) -> Vec<String> {
     docs.iter().map(|d| d.text.clone()).collect()
 }
@@ -475,7 +475,7 @@ impl<'m> Emitter<'m> {
                 match &def.kind {
                     TypeKind::Alias(a) => self.fresh(&a.target),
                     TypeKind::Scaled(_) => "0.0".to_string(),
-                    // An enum with no variants at all is a compile error (§12),
+                    // An enum with no variants at all is a compile error (§11),
                     // so the fallback only stands in for an `else`-only one.
                     TypeKind::Enum(e) => match (e.variants.first(), &e.else_arm) {
                         (Some(v), _) => format!("{name}.{}", screaming(&v.name)),
@@ -610,17 +610,12 @@ impl<'m> Emitter<'m> {
             self.line(1, &format!("\"{name}\","));
         }
         self.line(0, "]");
-        self.blank();
-
-        let version = self.m.version;
-        self.line(0, &format!("SCHEMA_VERSION: Final = {version}"));
-        self.note(0, "The schema's `version` pragma (SPEC.md §11).");
     }
 
     /// Everything a `from … import *` should bring in, in the order the module
     /// defines it.
     fn public_names(&self) -> Vec<String> {
-        let mut names = vec!["SCHEMA_VERSION".to_string()];
+        let mut names: Vec<String> = Vec::new();
         names.extend(ERRORS.iter().map(|(name, _, _)| (*name).to_string()));
 
         for def in &self.m.types {
@@ -829,7 +824,7 @@ impl<'m> Emitter<'m> {
                     "    \"\"\"Rounds half away from zero, which is what C's `round()` does.",
                     "",
                     "    The backends have to agree on a `scaled` value's raw integer down to",
-                    "    the last unit (§4, §14), and Python's own `round()` rounds half to",
+                    "    the last unit (§4, §13), and Python's own `round()` rounds half to",
                     "    even — 0.5 to 0, not to 1. The C backend carries the mirror image of",
                     "    this function rather than calling `round()` from libm.",
                     "",
@@ -1037,7 +1032,7 @@ impl<'m> Emitter<'m> {
         self.gap();
 
         // The fallback variant, and the alias letting a field hold either it or
-        // a declared variant (§5, §13).
+        // a declared variant (§5, §12).
         if let Some(arm) = &e.else_arm {
             let unknown = format!("{name}{}", ident(&arm.name));
             let notes = vec![format!(
@@ -1397,7 +1392,7 @@ impl<'m> Emitter<'m> {
     }
 
     // ---------------------------------------------------------------------
-    // Entry points (§13)
+    // Entry points (§12)
     // ---------------------------------------------------------------------
 
     fn encode_method(&mut self, schema_name: &str, size: u64, big: bool, max: Option<u128>) {

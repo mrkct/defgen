@@ -43,11 +43,11 @@ const CORE_KEYWORDS = [
 ];
 
 const LANGUAGES = {
-  // The .defs schema language (GRAMMAR.ebnf). `version`, `endian`, property
-  // names and the like are contextual keywords in the real grammar — lexed as
-  // plain identifiers and recognized by position — but coloring them like
-  // keywords here only helps a reader, so this highlighter does not bother
-  // with the distinction.
+  // The .defs schema language (GRAMMAR.ebnf). `endian`, property names and
+  // the like are contextual keywords in the real grammar — lexed as plain
+  // identifiers and recognized by position — but coloring them like keywords
+  // here only helps a reader, so this highlighter does not bother with the
+  // distinction.
   defs: {
     comment: String.raw`\/\/\/?[^\n]*`,
     string: String.raw`"(?:\\.|[^"\\\n])*"`,
@@ -56,7 +56,7 @@ const LANGUAGES = {
     keywords: words([
       "alias", "as", "characteristic", "else", "enum", "padding", "reserved",
       "scaled", "service", "string", "struct",
-      "version", "endian", "little", "big", "max", "uuid", "properties",
+      "endian", "little", "big", "max", "uuid", "properties",
       "read", "write", "write_without_response", "notify", "indicate",
     ]),
     types: words(["bool", "f32", "f64"]),

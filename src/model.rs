@@ -1,4 +1,4 @@
-//! The checked model: the schema as it looks once every rule in SPEC.md §12
+//! The checked model: the schema as it looks once every rule in SPEC.md §11
 //! has been enforced.
 //!
 //! Where [`crate::ast`] records what the author *wrote*, this records what the
@@ -447,8 +447,6 @@ pub struct Characteristic {
 /// A fully checked schema.
 #[derive(Debug, Clone)]
 pub struct Model {
-    /// The `version` pragma, emitted as a constant by every backend (§11, §13).
-    pub version: u64,
     /// The file-level default byte order (§8).
     pub endian: Endianness,
     /// Every declared type, in source order.
@@ -503,7 +501,7 @@ impl Model {
     }
 
     /// Types bound to at least one characteristic — the ones a backend emits
-    /// encode/decode entry points for (§13).
+    /// encode/decode entry points for (§12).
     pub fn roots(&self) -> impl Iterator<Item = &TypeDef> {
         self.types.iter().filter(|t| t.root)
     }

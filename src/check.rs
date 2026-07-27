@@ -1,4 +1,4 @@
-//! The semantic pass: everything in SPEC.md §12 that needs to look at more
+//! The semantic pass: everything in SPEC.md §11 that needs to look at more
 //! than one node.
 //!
 //! The parser guarantees each declaration is well-formed on its own. This pass
@@ -46,8 +46,7 @@ pub fn check(schema: &Schema) -> Checked {
     let diagnostics = checker.diags;
     let has_errors = diagnostics.iter().any(|d| d.severity == Severity::Error);
     let model = (!has_errors).then_some(Model {
-        version: schema.version.value,
-        endian: schema.endian.value,
+        endian: schema.endian.map_or(ast::Endianness::Little, |e| e.value),
         types: checker.types,
         services: checker.services,
     });
@@ -82,7 +81,7 @@ struct Checker<'a> {
     /// `#[endian(...)]` spans, checked against root-ness once every use of
     /// every type is known (§8).
     endian_attrs: Vec<(TypeId, Span)>,
-    /// Characteristic and service names/UUIDs already seen, for §12's
+    /// Characteristic and service names/UUIDs already seen, for §11's
     /// duplicate checks.
     char_names: HashMap<String, Span>,
     service_uuids: HashMap<String, Span>,
@@ -128,7 +127,7 @@ impl<'a> Checker<'a> {
     }
 
     // -----------------------------------------------------------------------
-    // Declaration names (§12)
+    // Declaration names (§11)
     // -----------------------------------------------------------------------
 
     fn collect_names(&mut self) {
@@ -141,7 +140,7 @@ impl<'a> Checker<'a> {
                 let d = Diagnostic::error(format!("`{}` is declared more than once", name.name))
                     .primary(name.span, format!("redeclared as a {} here", decl.kind_str()))
                     .secondary(previous.name().span, format!("first declared as a {} here", previous.kind_str()))
-                    .note("every declaration in a file shares one namespace, and generated code needs one name per type (§12)")
+                    .note("every declaration in a file shares one namespace, and generated code needs one name per type (§11)")
                     .help("rename one of them");
                 self.error(d);
                 continue;
@@ -188,7 +187,8 @@ impl<'a> Checker<'a> {
             docs: decl.docs().clone(),
             span: decl.span(),
             layout,
-            endian: attr_endian.map_or(self.schema.endian.value, |e| e.value),
+            endian: attr_endian
+                .map_or_else(|| self.schema.endian.map_or(ast::Endianness::Little, |e| e.value), |e| e.value),
             endian_explicit: attr_endian.is_some(),
             root: false,
             nested: false,
@@ -284,7 +284,7 @@ impl<'a> Checker<'a> {
                     v.name.name
                 ))
                 .primary(span, format!("{value} is outside 0..={limit}"))
-                .note(format!("an enum's values are `u{bits}` wire values, so they must fit (§5, §12)"));
+                .note(format!("an enum's values are `u{bits}` wire values, so they must fit (§5, §11)"));
                 e = if explicit {
                     e.help(format!(
                         "widen the backing type, e.g. `enum {}: u{}`",
@@ -303,7 +303,7 @@ impl<'a> Checker<'a> {
                 let e = Diagnostic::error(format!("enum value {value} is used twice"))
                     .primary(span, format!("`{}` also has value {value}", v.name.name))
                     .secondary(*other_span, format!("`{other}` declared it first"))
-                    .note("two names for one wire value make decoding ambiguous (§5, §12)")
+                    .note("two names for one wire value make decoding ambiguous (§5, §11)")
                     .help(if explicit {
                         "give this variant a different value"
                     } else {
@@ -380,7 +380,7 @@ impl<'a> Checker<'a> {
                     v.id.value
                 ))
                 .primary(v.id.span, format!("outside 0..={id_limit}"))
-                .note(format!("the discriminant is `u{tag_bits}`, so every id must fit in it (§7, §12)"))
+                .note(format!("the discriminant is `u{tag_bits}`, so every id must fit in it (§7, §11)"))
                 .help(format!(
                     "widen the discriminant, e.g. `{}(id: u{})`",
                     d.name.name,
@@ -391,7 +391,7 @@ impl<'a> Checker<'a> {
                 let e = Diagnostic::error(format!("variant id {:#x} is used twice", v.id.value))
                     .primary(v.id.span, format!("`{}` also has this id", v.name.name))
                     .secondary(*other_span, format!("`{other}` declared it first"))
-                    .note("an id is a wire contract: two variants sharing one makes decoding ambiguous (§7, §12)");
+                    .note("an id is a wire contract: two variants sharing one makes decoding ambiguous (§7, §11)");
                 self.error(e);
             } else {
                 ids.insert(v.id.value, (&v.name.name, v.id.span));
@@ -410,7 +410,7 @@ impl<'a> Checker<'a> {
                     d.container_bits.span,
                     format!("`u{container_bits}` container minus the `u{tag_bits}` discriminant leaves {payload_bits} bits"),
                 )
-                .note("a variant's fields must fit the payload region; unused trailing bits are implicit padding, but there is no room to overflow into (§7, §12)")
+                .note("a variant's fields must fit the payload region; unused trailing bits are implicit padding, but there is no room to overflow into (§7, §11)")
                 .help("shrink the variant's fields, or widen the container");
                 self.error(e);
             }
@@ -579,7 +579,7 @@ impl<'a> Checker<'a> {
                     .primary(name.span, "declared twice")
                     .secondary(*first, "first declared here")
                     .note(
-                        "variants become distinct cases in generated code, so their names must differ (§12)",
+                        "variants become distinct cases in generated code, so their names must differ (§11)",
                     );
             self.error(e);
         } else {
@@ -616,7 +616,7 @@ impl<'a> Checker<'a> {
                 let e = Diagnostic::error(format!("duplicate field `{}` in {owner}", name.name))
                     .primary(name.span, "declared twice")
                     .secondary(first, "first declared here")
-                    .note("field names become member names in generated code, so they must be unique within a container (§12)");
+                    .note("field names become member names in generated code, so they must be unique within a container (§11)");
                 self.error(e);
             }
 
@@ -630,7 +630,7 @@ impl<'a> Checker<'a> {
                     VarFields::Rejected => {
                         let e = Diagnostic::error(format!("{owner} cannot contain a variable-length field"))
                             .primary(field.span, "this field's size depends on the buffer")
-                            .note("tagged unions are fully fixed-width in v1: a variant's payload region has a compile-time size (§6.3, §7, §15)")
+                            .note("tagged unions are fully fixed-width in v1: a variant's payload region has a compile-time size (§6.3, §7, §14)")
                             .help("model the variable-length value as its own characteristic instead");
                         self.error(e);
                         walk.ok = false;
@@ -836,7 +836,7 @@ impl<'a> Checker<'a> {
     }
 
     // -----------------------------------------------------------------------
-    // Name resolution (§9, §12)
+    // Name resolution (§9, §11)
     // -----------------------------------------------------------------------
 
     fn lookup(&mut self, ident: &Ident, using: Use) -> Option<TypeId> {
@@ -864,7 +864,7 @@ impl<'a> Checker<'a> {
             Some(index) if index == self.current => {
                 let e = Diagnostic::error(format!("`{}` cannot contain itself", ident.name))
                     .primary(ident.span, "recursive type reference")
-                    .note("a container's layout is computed at compile time, so it cannot embed itself directly or transitively (§12)")
+                    .note("a container's layout is computed at compile time, so it cannot embed itself directly or transitively (§11)")
                     .help("hold the nested value in a separate characteristic instead");
                 self.error(e);
                 self.tainted = true;
@@ -959,7 +959,7 @@ impl<'a> Checker<'a> {
                 let e = Diagnostic::error(format!("characteristic `{}` is declared more than once", c.name.name))
                     .primary(c.name.span, "declared again here")
                     .secondary(first, "first declared here")
-                    .note("characteristic names are unique across the file: each becomes one named binding in generated code (§12)");
+                    .note("characteristic names are unique across the file: each becomes one named binding in generated code (§11)");
                 self.error(e);
             }
             self.check_uuid(&c.uuid, &format!("characteristic `{}`", c.name.name));
@@ -1061,7 +1061,7 @@ impl<'a> Checker<'a> {
             ))
             .primary(c.ty.span, format!("`{name}` is {bits} bits wide"))
             .secondary(decl_span, "declared here")
-            .note("a characteristic's value is a byte buffer framed by ATT, so a bound container's width must be a multiple of 8 (§10, §13)")
+            .note("a characteristic's value is a byte buffer framed by ATT, so a bound container's width must be a multiple of 8 (§10, §12)")
             .help(format!("pad `{name}` out to {} bits", bits.next_multiple_of(8)));
             self.error(e);
             return;
@@ -1111,7 +1111,7 @@ impl Use {
 }
 
 /// Whether the container being walked may hold a variable-length field: a
-/// struct may (§6.3), a tagged-union variant may not (§7, §15).
+/// struct may (§6.3), a tagged-union variant may not (§7, §14).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum VarFields {
     Allowed,

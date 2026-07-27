@@ -3,7 +3,7 @@
 //! The AST is a faithful, span-carrying record of what the schema author wrote:
 //! the parser resolves closed syntactic sets (attribute names, GATT properties,
 //! integer widths) into typed values, but performs no layout, no name
-//! resolution, and no width arithmetic. Everything in SPEC.md §12 that needs to
+//! resolution, and no width arithmetic. Everything in SPEC.md §11 that needs to
 //! look at more than one node — exact-fit widths, duplicate ids, undeclared or
 //! recursive type references, `#[endian]` on a nested-only type — is left to a
 //! later semantic pass over this tree.
@@ -35,7 +35,7 @@ impl Ident {
 }
 
 /// One `///` line. Kept line-by-line so backends can re-wrap or re-prefix them
-/// for their target language's doc-comment syntax (SPEC.md §13).
+/// for their target language's doc-comment syntax (SPEC.md §12).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Doc {
     pub text: String,
@@ -63,12 +63,13 @@ impl Endianness {
 // File
 // ---------------------------------------------------------------------------
 
-/// A whole `.defs` file: the header pragmas (§1.1) plus the declarations below
-/// the `---`.
+/// A whole `.defs` file: the optional header pragma plus the declarations
+/// below the `---` (§1.1).
 #[derive(Debug, Clone)]
 pub struct Schema {
-    pub version: Spanned<u64>,
-    pub endian: Spanned<Endianness>,
+    /// The `endian` pragma, if the file declared a header. `None` means the
+    /// file had no header at all, and the default byte order (little) applies.
+    pub endian: Option<Spanned<Endianness>>,
     /// Span of the `---` separator, if the file had one.
     pub separator: Option<Span>,
     pub decls: Vec<Decl>,
@@ -275,7 +276,7 @@ pub struct AliasDecl {
 pub struct ScaledDecl {
     pub docs: Docs,
     pub name: Ident,
-    /// Always `UInt`/`Int`: checked at parse time (§12).
+    /// Always `UInt`/`Int`: checked at parse time (§11).
     pub raw: ScalarType,
     pub physical: Spanned<FloatType>,
     pub scale: Spanned<f64>,

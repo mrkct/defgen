@@ -23,7 +23,7 @@ use crate::model::Model;
 // Naming
 // ---------------------------------------------------------------------------
 //
-// Every target language re-cases the schema's identifiers (§13), and they all
+// Every target language re-cases the schema's identifiers (§12), and they all
 // start from the same two conversions, so they live here rather than being
 // re-derived — and allowed to drift — once per backend.
 
@@ -80,7 +80,7 @@ pub fn screaming(name: &str) -> String {
 }
 
 /// `active_profile` (or any other casing) to `activeProfile` — the property
-/// and function naming convention Kotlin, Swift and Java all share (§13).
+/// and function naming convention Kotlin, Swift and Java all share (§12).
 /// Goes through [`snake`] first so the word boundaries are found the same way
 /// `screaming` finds them, then re-joins with an uppercased first letter on
 /// every word but the first.

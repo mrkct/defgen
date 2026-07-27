@@ -11,7 +11,7 @@
 //! invisible to string matching.
 //!
 //! The conformance fixture asserts the very same byte strings as its C, Python,
-//! Java, Kotlin and Swift counterparts. That is the point of §14 — several
+//! Java, Kotlin and Swift counterparts. That is the point of §13 — several
 //! backends, one wire format — so if these ever disagree, one of the backends
 //! is wrong.
 //!
@@ -65,7 +65,7 @@ fn example_module() -> String {
 
 /// A schema with just enough header to be legal, so a test can be one struct.
 fn schema(body: &str) -> String {
-    format!("version = 1;\nendian: little;\n---\n{body}")
+    format!("endian: little;\n---\n{body}")
 }
 
 fn assert_contains(module: &str, needle: &str) {
@@ -90,7 +90,7 @@ fn class_body(module: &str, name: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// JSDoc (§13 — the generated API is fully typed)
+// JSDoc (§12 — the generated API is fully typed)
 // ---------------------------------------------------------------------------
 
 /// One function, method or constructor the emitter wrote, as
@@ -224,7 +224,7 @@ fn assert_valid(module: &str, name: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// Registry (SPEC.md §13 — one backend per target language)
+// Registry (SPEC.md §12 — one backend per target language)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -291,16 +291,9 @@ fn helpers_are_only_what_the_schema_needs() {
 }
 
 #[test]
-fn the_version_pragma_becomes_a_constant() {
-    // SPEC.md §11: applications log or branch on the schema version.
-    assert_contains(&example_module(), "export const SCHEMA_VERSION = 2;");
-}
-
-#[test]
 fn the_exported_surface_is_the_public_one() {
     let module = example_module();
     for wanted in [
-        "export const SCHEMA_VERSION",
         "export class DefgenError",
         "export class Status",
         "export class Command",
@@ -427,7 +420,7 @@ fn a_scaled_type_exposes_both_representations() {
 
 #[test]
 fn scaled_rounding_uses_neither_math_round_nor_a_library() {
-    // §4, §14: the backends have to agree on a raw integer down to the last
+    // §4, §13: the backends have to agree on a raw integer down to the last
     // unit, and `Math.round` rounds half *up* — -0.5 to -0, where C's `round`
     // gives -1 — so it would disagree with every other backend below zero.
     let module = example_module();
@@ -464,7 +457,7 @@ fn an_integer_field_rejects_a_number_that_is_not_one() {
 
 #[test]
 fn enum_variants_become_members_of_a_frozen_object() {
-    // §13: casing is converted to the target language's convention, which for
+    // §12: casing is converted to the target language's convention, which for
     // an object standing in for an `enum` is the one TypeScript's own uses.
     let module = example_module();
     assert_contains(&module, "export const HearingMode = Object.freeze({");
@@ -488,7 +481,7 @@ fn an_implicitly_numbered_enum_gets_the_values_the_checker_resolved() {
 
 #[test]
 fn a_closed_enum_rejects_an_unmatched_value_on_both_sides() {
-    // §5, §13: decoding an undeclared value must be fallible.
+    // §5, §12: decoding an undeclared value must be fallible.
     let src = schema("enum Mode: u8 { A = 0, B = 1, }\nstruct S: u8 { m: Mode, }");
     let module = module_of(&src, "closed");
     assert_eq!(
@@ -504,7 +497,7 @@ fn a_closed_enum_rejects_an_unmatched_value_on_both_sides() {
 
 #[test]
 fn an_open_enum_decodes_an_undeclared_value_into_its_own_type() {
-    // §5, §13: the unknown case is a distinct type carrying the raw value, so
+    // §5, §12: the unknown case is a distinct type carrying the raw value, so
     // it can never be confused with a declared one — which a bare number could
     // be, since every declared variant is one.
     let module = example_module();
@@ -525,7 +518,7 @@ fn an_open_enum_decodes_an_undeclared_value_into_its_own_type() {
 
 #[test]
 fn a_tagged_union_becomes_a_class_hierarchy() {
-    // §7, §13: one class per variant under a shared base, so a decoded value is
+    // §7, §12: one class per variant under a shared base, so a decoded value is
     // matched with `instanceof` rather than by reading a tag by hand.
     let module = example_module();
     assert_contains(&module, "export class Command {");
@@ -682,7 +675,7 @@ fn names_are_recased_without_mangling_acronyms() {
 
 #[test]
 fn field_names_become_camel_case() {
-    // §13: `active_profile` is `activeProfile`, the convention JavaScript
+    // §12: `active_profile` is `activeProfile`, the convention JavaScript
     // shares with Kotlin and Swift.
     let module = example_module();
     assert_contains(&module, "this.activeProfile = init.activeProfile ?? 0;");
@@ -692,7 +685,7 @@ fn field_names_become_camel_case() {
 }
 
 // ---------------------------------------------------------------------------
-// Codec surface (§13)
+// Codec surface (§12)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -761,7 +754,7 @@ fn byte_order_is_resolved_per_root_container() {
 
 #[test]
 fn a_variable_length_field_is_a_string_or_an_array() {
-    // §13: JavaScript gets the idiomatic container, not C's buffer-plus-length.
+    // §12: JavaScript gets the idiomatic container, not C's buffer-plus-length.
     let module = example_module();
     assert_contains(&module, "this.label = init.label ?? \"\";");
     assert_contains(&module, "@param {Temperature[]} [init.samples]");
@@ -844,7 +837,7 @@ fn utf8_is_validated_rather_than_patched_up() {
 
 #[test]
 fn every_failure_is_a_defgen_error() {
-    // §13: one base class, so a caller can catch the lot with one `catch`.
+    // §12: one base class, so a caller can catch the lot with one `catch`.
     let module = example_module();
     assert_contains(&module, "export class DefgenError extends Error {");
     for sub in ["Length", "Range", "UnknownValue", "Padding", "Utf8"] {

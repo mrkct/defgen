@@ -1,8 +1,6 @@
 // A minimal schema: one service, one notified characteristic.
 // Everything here is explained in SPEC.md.
 
-version = 1;
-
 // Default byte order for every root container in this file.
 endian: little;
 

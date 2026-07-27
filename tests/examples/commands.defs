@@ -2,11 +2,6 @@
 // Describes the GATT layout for a fictitious BLE hearing-aid-style device.
 // See SPEC.md for the full language specification.
 
-// Schema/protocol version. Bump whenever variants or fields are added;
-// never remove or renumber existing ones. Exposed to generated code as a
-// constant so apps and firmware can log/detect version skew.
-version = 2;
-
 // Default byte order for every root container in this file (little-endian,
 // the common case for BLE). Can be overridden per-container; see
 // `LegacySerial` below for a device that mixes conventions.

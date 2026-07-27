@@ -68,7 +68,6 @@ fn the_example_checks_clean_apart_from_non_fatal_warnings() {
 #[test]
 fn pragmas_reach_the_model() {
     let model = example();
-    assert_eq!(model.version, 2);
     assert_eq!(model.endian, Endianness::Little);
 }
 
@@ -225,7 +224,7 @@ fn aliases_keep_their_name_but_borrow_their_targets_layout() {
     let TypeKind::Alias(alias) = &volume.kind else { panic!("alias") };
     assert_eq!(alias.target, WireType::UInt(4));
 
-    // A field keeps referring to `Volume`, not to `u4` (§13 wants the name).
+    // A field keeps referring to `Volume`, not to `u4` (§12 wants the name).
     let field = &ty(&model, "Status").as_struct().unwrap().fields[1];
     assert_eq!(field.ty, WireType::Named(volume.id));
 }

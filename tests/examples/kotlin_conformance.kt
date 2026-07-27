@@ -365,7 +365,6 @@ fun testOwnerName() {
 // ---------------------------------------------------------------------------
 
 fun testMetadata() {
-    check(SCHEMA_VERSION == 2uL, "SCHEMA_VERSION")
     check(HEARING_AID_CONTROL_UUID == "7d8f0000-3c1a-4e8a-9b5a-000000000000", "service UUID")
     check(
         HEARING_AID_CONTROL_STATUS_CHAR_UUID == "7d8f0001-3c1a-4e8a-9b5a-000000000000",

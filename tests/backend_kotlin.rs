@@ -8,7 +8,7 @@
 //! Kotlin saying the wrong thing is invisible to string matching.
 //!
 //! The conformance fixture asserts the very same byte strings as its C and
-//! Python counterparts. That is the point of §14 — several backends, one wire
+//! Python counterparts. That is the point of §13 — several backends, one wire
 //! format — so if these ever disagree, one of the backends is wrong.
 //!
 //! Anything needing `kotlinc` is skipped, loudly, when there isn't one, so
@@ -60,7 +60,7 @@ fn example_file() -> String {
 
 /// A schema with just enough header to be legal, so a test can be one struct.
 fn schema(body: &str) -> String {
-    format!("version = 1;\nendian: little;\n---\n{body}")
+    format!("endian: little;\n---\n{body}")
 }
 
 fn assert_contains(file: &str, needle: &str) {
@@ -160,7 +160,7 @@ fn assert_compiles(file: &str, name: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// Registry (SPEC.md §13 — one backend per target language)
+// Registry (SPEC.md §12 — one backend per target language)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -218,12 +218,6 @@ fn rounding_only_imports_bigdecimal_when_a_scaled_type_needs_it() {
     let plain = file_of(&schema("struct S: u8 { x: u8, }"), "s");
     assert!(!plain.contains("BigDecimal"), "no `scaled` type means no rounding helper");
     assert!(!plain.contains("defgenRound"));
-}
-
-#[test]
-fn the_version_pragma_becomes_a_constant() {
-    // SPEC.md §11: applications log or branch on the schema version.
-    assert_contains(&example_file(), "const val SCHEMA_VERSION: ULong = 2uL");
 }
 
 #[test]
@@ -330,7 +324,7 @@ fn a_scaled_type_exposes_both_representations() {
 
 #[test]
 fn scaled_rounding_rounds_half_away_from_zero() {
-    // §4, §14: the backends have to agree on a raw integer down to the last
+    // §4, §13: the backends have to agree on a raw integer down to the last
     // unit, and the JVM's own `Math.round` rounds half *up*, which disagrees
     // with a negative tie. `defgenRound` is `private`, so this schema-level
     // sweep is the only thing pinning its shape down on the Rust side; the
@@ -345,7 +339,7 @@ fn scaled_rounding_rounds_half_away_from_zero() {
 
 #[test]
 fn enum_variants_become_screaming_snake_members_when_closed() {
-    // §13: casing is converted to the target language's convention — but only
+    // §12: casing is converted to the target language's convention — but only
     // for a closed enum's `enum class` members; an open enum's nested
     // `object`s keep the schema's own PascalCase spelling (checked below).
     let src = schema("enum Mode: u8 { A = 0, Bravo = 1, }\nstruct S: u8 { m: Mode, }");
@@ -368,7 +362,7 @@ fn an_implicitly_numbered_enum_gets_the_values_the_checker_resolved() {
 
 #[test]
 fn a_closed_enum_is_an_enum_class_that_rejects_an_unmatched_value() {
-    // §5, §13: decoding an undeclared value must be fallible, and — unlike an
+    // §5, §12: decoding an undeclared value must be fallible, and — unlike an
     // open enum — a closed one needs no sealed hierarchy at all.
     let src = schema("enum Mode: u8 { A = 0, B = 1, }\nstruct S: u8 { m: Mode, }");
     let file = file_of(&src, "closed");
@@ -381,7 +375,7 @@ fn a_closed_enum_is_an_enum_class_that_rejects_an_unmatched_value() {
 
 #[test]
 fn an_open_enum_is_a_sealed_class_covering_every_wire_value() {
-    // §5, §13: the unknown case is a distinct nested type, so it can never be
+    // §5, §12: the unknown case is a distinct nested type, so it can never be
     // confused with a declared one — and unlike Python's `IntEnum` + `Union`
     // alias, the sealed class already *is* the "declared, or not" type: no
     // separate value alias is needed.
@@ -399,7 +393,7 @@ fn an_open_enum_is_a_sealed_class_covering_every_wire_value() {
 
 #[test]
 fn a_tagged_union_becomes_a_sealed_class_with_nested_variants() {
-    // §7, §13: one nested type per variant under a shared sealed base, so a
+    // §7, §12: one nested type per variant under a shared sealed base, so a
     // decoded value is matched with `is`, never by reading a tag by hand.
     let file = example_file();
     assert_contains(&file, "sealed class Command {");
@@ -516,12 +510,12 @@ fn names_are_recased_without_mangling_acronyms() {
 
 #[test]
 fn active_profile_becomes_camel_case() {
-    // §13: `snake_case` fields become camelCase properties in Kotlin.
+    // §12: `snake_case` fields become camelCase properties in Kotlin.
     assert_contains(&example_file(), "var activeProfile: UByte");
 }
 
 // ---------------------------------------------------------------------------
-// Codec surface (§13)
+// Codec surface (§12)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -585,7 +579,7 @@ fn byte_order_is_resolved_per_root_container() {
 
 #[test]
 fn a_variable_length_field_is_a_string_or_a_list() {
-    // §13: Kotlin gets the idiomatic container, not C's buffer-plus-length.
+    // §12: Kotlin gets the idiomatic container, not C's buffer-plus-length.
     let file = example_file();
     assert_contains(&file, "var label: String = \"\"");
     assert_contains(&file, "var samples: List<Temperature> = ");
@@ -649,7 +643,7 @@ fn utf8_is_validated_rather_than_patched_up() {
 
 #[test]
 fn every_failure_is_a_defgen_error() {
-    // §13: one sealed base class, so a caller can catch the lot with one `catch`.
+    // §12: one sealed base class, so a caller can catch the lot with one `catch`.
     let file = example_file();
     assert_contains(&file, "sealed class DefgenError(message: String) : Exception(message)");
     for sub in ["Length", "Range", "UnknownValue", "Padding", "Utf8"] {

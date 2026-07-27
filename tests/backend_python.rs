@@ -11,7 +11,7 @@
 //! matching.
 //!
 //! The conformance fixture asserts the very same byte strings as its C
-//! counterpart. That is the point of §14 — two backends, one wire format — so
+//! counterpart. That is the point of §13 — two backends, one wire format — so
 //! if these two files ever disagree, one of the backends is wrong.
 //!
 //! Anything needing an interpreter is skipped, loudly, when there isn't one, so
@@ -64,7 +64,7 @@ fn example_module() -> String {
 
 /// A schema with just enough header to be legal, so a test can be one struct.
 fn schema(body: &str) -> String {
-    format!("version = 1;\nendian: little;\n---\n{body}")
+    format!("endian: little;\n---\n{body}")
 }
 
 fn assert_contains(module: &str, needle: &str) {
@@ -89,7 +89,7 @@ fn class_body(module: &str, name: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Type annotations (§13 — the generated API is fully typed)
+// Type annotations (§12 — the generated API is fully typed)
 // ---------------------------------------------------------------------------
 
 /// Splits a parameter list on the commas that separate parameters, leaving the
@@ -205,7 +205,7 @@ fn assert_valid(module: &str, name: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// Registry (SPEC.md §13 — one backend per target language)
+// Registry (SPEC.md §12 — one backend per target language)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -255,7 +255,7 @@ fn the_module_is_self_contained() {
 
 #[test]
 fn annotations_are_postponed() {
-    // §13: a class annotates its own methods with its own name, which does not
+    // §12: a class annotates its own methods with its own name, which does not
     // exist yet while the class body runs. PEP 563 is what makes that legal,
     // and it has to be the first statement after the module docstring.
     let module = example_module();
@@ -280,12 +280,6 @@ fn imports_are_only_what_the_schema_needs() {
 }
 
 #[test]
-fn the_version_pragma_becomes_a_constant() {
-    // SPEC.md §11: applications log or branch on the schema version.
-    assert_contains(&example_module(), "SCHEMA_VERSION: Final = 2");
-}
-
-#[test]
 fn dunder_all_lists_the_public_surface_and_nothing_private() {
     let module = example_module();
     let start = module.find("__all__ = [").expect("__all__");
@@ -293,7 +287,7 @@ fn dunder_all_lists_the_public_surface_and_nothing_private() {
     let names: Vec<&str> =
         module[start..end].lines().skip(1).map(|l| l.trim().trim_matches(['"', ','])).collect();
 
-    for wanted in ["SCHEMA_VERSION", "DefgenError", "Status", "Command", "CommandUnknown", "SERVICES"] {
+    for wanted in ["DefgenError", "Status", "Command", "CommandUnknown", "SERVICES"] {
         assert!(names.contains(&wanted), "`__all__` is missing `{wanted}`");
     }
     for name in &names {
@@ -410,7 +404,7 @@ fn a_scaled_type_exposes_both_representations() {
 
 #[test]
 fn scaled_rounding_uses_neither_pythons_round_nor_the_standard_library() {
-    // §4, §14: the backends have to agree on a raw integer down to the last
+    // §4, §13: the backends have to agree on a raw integer down to the last
     // unit, and Python's `round` rounds half to even where C's rounds half away
     // from zero. 0.5 has to become 1 here, not 0.
     let module = example_module();
@@ -442,7 +436,7 @@ fn a_scaled_value_that_cannot_be_rounded_is_a_range_error() {
 
 #[test]
 fn enum_variants_become_screaming_snake_members() {
-    // §13: casing is converted to the target language's convention.
+    // §12: casing is converted to the target language's convention.
     let module = example_module();
     assert_contains(&module, "class HearingMode(enum.IntEnum):");
     assert_contains(&module, "    DEFAULT = 0");
@@ -463,7 +457,7 @@ fn an_implicitly_numbered_enum_gets_the_values_the_checker_resolved() {
 
 #[test]
 fn a_closed_enum_rejects_an_unmatched_value_on_both_sides() {
-    // §5, §13: decoding an undeclared value must be fallible.
+    // §5, §12: decoding an undeclared value must be fallible.
     let src = schema("enum Mode: u8 { A = 0, B = 1, }\nstruct S: u8 { m: Mode, }");
     let module = module_of(&src, "closed");
     let body = class_body(&module, "Mode");
@@ -480,7 +474,7 @@ fn a_closed_enum_rejects_an_unmatched_value_on_both_sides() {
 
 #[test]
 fn an_open_enum_decodes_an_undeclared_value_into_its_own_type() {
-    // §5, §13: the unknown case is a distinct variant carrying the raw value,
+    // §5, §12: the unknown case is a distinct variant carrying the raw value,
     // so it can never be confused with a declared one — which an `IntEnum`
     // member alone could be, since it compares equal to its integer.
     let module = example_module();
@@ -501,7 +495,7 @@ fn an_open_enum_decodes_an_undeclared_value_into_its_own_type() {
 
 #[test]
 fn a_tagged_union_becomes_a_sealed_class_hierarchy() {
-    // §7, §13: one class per variant under a shared base, so a decoded value is
+    // §7, §12: one class per variant under a shared base, so a decoded value is
     // matched with `isinstance` rather than by reading a tag by hand.
     let module = example_module();
     assert_contains(&module, "class Command:");
@@ -642,7 +636,7 @@ fn names_are_recased_without_mangling_acronyms() {
 }
 
 // ---------------------------------------------------------------------------
-// Codec surface (§13)
+// Codec surface (§12)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -712,7 +706,7 @@ fn byte_order_is_resolved_per_root_container() {
 
 #[test]
 fn a_variable_length_field_is_a_str_or_a_list() {
-    // §13: Python gets the idiomatic container, not C's buffer-plus-length.
+    // §12: Python gets the idiomatic container, not C's buffer-plus-length.
     let module = example_module();
     assert_contains(&module, "    label: str = \"\"");
     assert_contains(&module, "    samples: list[Temperature] = ");
@@ -787,7 +781,7 @@ fn utf8_is_validated_rather_than_patched_up() {
 
 #[test]
 fn every_failure_is_a_defgen_error() {
-    // §13: one base class, so a caller can catch the lot with one `except`.
+    // §12: one base class, so a caller can catch the lot with one `except`.
     let module = example_module();
     assert_contains(&module, "class DefgenError(Exception):");
     for sub in ["Length", "Range", "UnknownValue", "Padding", "Utf8"] {

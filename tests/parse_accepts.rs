@@ -14,7 +14,7 @@ fn schema(src: &str) -> Schema {
 
 #[track_caller]
 fn body(decls: &str) -> Schema {
-    schema(&format!("version = 7;\nendian: big;\n\n---\n\n{decls}"))
+    schema(&format!("endian: big;\n\n---\n\n{decls}"))
 }
 
 #[test]
@@ -34,9 +34,30 @@ service Svc(uuid: \"x\",) {
 
 #[test]
 fn header_order_and_blank_lines_are_flexible() {
-    let s = schema("endian: big;\n\n\n// a comment\nversion = 3;\n\n---\n\nalias A = u8;\n");
-    assert_eq!(s.version.value, 3);
-    assert_eq!(s.endian.value, Endianness::Big);
+    let s = schema("\n\n// a comment\nendian: big;\n\n---\n\nalias A = u8;\n");
+    assert_eq!(s.endian.map(|e| e.value), Some(Endianness::Big));
+}
+
+#[test]
+fn header_is_entirely_optional() {
+    let s = schema("alias A = u8;\n");
+    assert!(s.endian.is_none());
+    assert!(s.separator.is_none());
+    assert_eq!(s.decls.len(), 1);
+}
+
+#[test]
+fn bare_separator_with_no_endian_pragma_is_allowed() {
+    let s = schema("---\n\nalias A = u8;\n");
+    assert!(s.endian.is_none());
+    assert!(s.separator.is_some());
+}
+
+#[test]
+fn leading_doc_comment_with_no_header_attaches_to_first_declaration() {
+    let s = schema("/// first\nalias A = u8;\n");
+    assert!(s.endian.is_none());
+    assert_eq!(s.decl("A").unwrap().docs()[0].text, "first");
 }
 
 #[test]

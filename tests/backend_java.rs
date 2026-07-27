@@ -8,7 +8,7 @@
 //! saying the wrong thing is invisible to string matching.
 //!
 //! The conformance fixture asserts the very same byte strings as its C, Python
-//! and Kotlin counterparts. That is the point of §14 — several backends, one
+//! and Kotlin counterparts. That is the point of §13 — several backends, one
 //! wire format — so if these ever disagree, one of the backends is wrong.
 //!
 //! Anything needing a JDK is skipped, loudly, when there isn't one, so this file
@@ -60,7 +60,7 @@ fn example_file() -> String {
 
 /// A schema with just enough header to be legal, so a test can be one struct.
 fn schema(body: &str) -> String {
-    format!("version = 1;\nendian: little;\n---\n{body}")
+    format!("endian: little;\n---\n{body}")
 }
 
 fn assert_contains(file: &str, needle: &str) {
@@ -168,7 +168,7 @@ fn assert_compiles(file: &(String, String), name: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// Registry (SPEC.md §13 — one backend per target language)
+// Registry (SPEC.md §12 — one backend per target language)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -241,12 +241,6 @@ fn imports_are_only_what_the_schema_needs() {
     assert!(!plain.contains("defgenRound"));
     assert!(!plain.contains("import java.util.List;"), "nor a list import with nothing to hold");
     assert!(!plain.contains("import java.util.Arrays;"), "nor a tail helper with no tail");
-}
-
-#[test]
-fn the_version_pragma_becomes_a_constant() {
-    // SPEC.md §11: applications log or branch on the schema version.
-    assert_contains(&example_file(), "public static final long SCHEMA_VERSION = 2L;");
 }
 
 #[test]
@@ -362,7 +356,7 @@ fn a_scaled_type_exposes_both_representations() {
 
 #[test]
 fn scaled_rounding_rounds_half_away_from_zero() {
-    // §4, §14: the backends have to agree on a raw integer down to the last
+    // §4, §13: the backends have to agree on a raw integer down to the last
     // unit, and the JDK's own Math.round rounds half *up*, which disagrees with
     // a negative tie. The Java conformance fixture pins the behavior down
     // through the public `temperatureToRaw`.
@@ -378,12 +372,12 @@ fn scaled_rounding_rounds_half_away_from_zero() {
 
 #[test]
 fn a_closed_enum_is_a_java_enum_that_rejects_an_unmatched_value() {
-    // §5, §13: decoding an undeclared value must be fallible, and — unlike an
+    // §5, §12: decoding an undeclared value must be fallible, and — unlike an
     // open enum — a closed one needs no sealed hierarchy at all.
     let src = schema("enum Mode: u8 { A = 0, Bravo = 1, }\nstruct S: u8 { m: Mode, }");
     let file = generate(&src, "closed");
     let body = type_body(&file.1, "Mode");
-    // §13: casing is converted to the target language's convention — but only
+    // §12: casing is converted to the target language's convention — but only
     // for a closed enum's constants; an open enum's nested records keep the
     // schema's own PascalCase spelling (checked below).
     assert_contains(&body, "A((short) 0),");
@@ -412,7 +406,7 @@ fn an_implicitly_numbered_enum_gets_the_values_the_checker_resolved() {
 
 #[test]
 fn an_open_enum_is_a_sealed_interface_covering_every_wire_value() {
-    // §5, §13: the unknown case is a distinct nested type, so it can never be
+    // §5, §12: the unknown case is a distinct nested type, so it can never be
     // confused with a declared one — and the sealed interface already *is* the
     // "declared, or not" type, so no separate value alias is needed.
     let file = example_file();
@@ -432,7 +426,7 @@ fn an_open_enum_is_a_sealed_interface_covering_every_wire_value() {
 
 #[test]
 fn a_tagged_union_becomes_a_sealed_interface_with_nested_records() {
-    // §7, §13: one nested type per variant under a shared sealed base, so a
+    // §7, §12: one nested type per variant under a shared sealed base, so a
     // decoded value is matched with `instanceof`, never by reading a tag by hand.
     let file = example_file();
     assert_contains(&file, "public sealed interface Command {");
@@ -562,12 +556,12 @@ fn names_are_recased_without_mangling_acronyms() {
 
 #[test]
 fn active_profile_becomes_camel_case() {
-    // §13: `snake_case` fields become camelCase members in Java.
+    // §12: `snake_case` fields become camelCase members in Java.
     assert_contains(&example_file(), "byte activeProfile");
 }
 
 // ---------------------------------------------------------------------------
-// Codec surface (§13)
+// Codec surface (§12)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -642,7 +636,7 @@ fn byte_order_is_resolved_per_root_container() {
 
 #[test]
 fn a_variable_length_field_is_a_string_or_a_list() {
-    // §13: Java gets the idiomatic container, not C's buffer-plus-length.
+    // §12: Java gets the idiomatic container, not C's buffer-plus-length.
     let file = example_file();
     assert_contains(&file, "String label");
     assert_contains(&file, "List<Float> samples");
@@ -714,7 +708,7 @@ fn utf8_is_validated_rather_than_patched_up() {
 
 #[test]
 fn every_failure_is_a_checked_defgen_error() {
-    // §13: one sealed base, so a caller can catch the lot with one `catch` —
+    // §12: one sealed base, so a caller can catch the lot with one `catch` —
     // and checked, so a caller cannot forget that decoding can fail.
     let file = example_file();
     assert_contains(&file, "public abstract static sealed class DefgenError extends Exception {");

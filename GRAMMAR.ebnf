@@ -3,7 +3,7 @@
 
    Companion to SPEC.md; section references (§) point at it. This file is the
    normative syntax: anything the grammar rejects is a parse error, anything it
-   accepts may still be rejected by a later semantic check (§12 — exact-fit
+   accepts may still be rejected by a later semantic check (§11 — exact-fit
    widths, duplicate values, undeclared type references, ...).
 
    Notation
@@ -26,18 +26,16 @@
 (* --- File structure (§1.1) ----------------------------------------------- *)
 
 file
-    = header , "---" , { declaration } , EOF
+    = [ header , "---" ] , { declaration } , EOF
     ;
 
-(* Both pragmas are required and each may appear exactly once; the grammar
-   permits either order, the parser enforces presence and uniqueness so it can
-   report which one is missing or duplicated. Nothing else may appear here. *)
+(* The header, and the `---` that closes it, are both optional together: a
+   file with neither just starts with its declarations, and the default byte
+   order (little-endian) applies. If the header is present it may declare
+   `endian` at most once; the parser enforces uniqueness so it can report a
+   duplicate. Nothing else may appear here. *)
 header
-    = { version_pragma | endian_pragma }
-    ;
-
-version_pragma
-    = "version" , "=" , INT , ";"
+    = [ endian_pragma ]
     ;
 
 endian_pragma
@@ -234,10 +232,10 @@ property
    Lexical structure (§1)
    =========================================================================== *)
 
-(* Reserved words. Every other keyword-looking word above (`version`,
-   `endian`, `little`, `big`, `max`, `uuid`, `properties`, the property names,
-   `f32`, `f64`, `bool`) is contextual: it is lexed as IDENT and recognized by
-   position, so it stays usable as a field or type name. *)
+(* Reserved words. Every other keyword-looking word above (`endian`, `little`,
+   `big`, `max`, `uuid`, `properties`, the property names, `f32`, `f64`,
+   `bool`) is contextual: it is lexed as IDENT and recognized by position, so
+   it stays usable as a field or type name. *)
 keyword
     = "alias" | "as" | "characteristic" | "else" | "enum" | "padding"
     | "reserved" | "scaled" | "service" | "string" | "struct"

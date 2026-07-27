@@ -1,4 +1,4 @@
-//! Semantic-error tests (SPEC.md §12). As with the parser's error tests, each
+//! Semantic-error tests (SPEC.md §11). As with the parser's error tests, each
 //! case asserts the *message* a schema author sees — the wording is the
 //! feature. Only the checker's rules live here; syntax errors are in
 //! `parse_errors.rs`.
@@ -6,7 +6,7 @@
 use defgen::compile;
 use defgen::diag::Severity;
 
-const HEADER: &str = "version = 1;\nendian: little;\n---\n";
+const HEADER: &str = "endian: little;\n---\n";
 
 /// Checks `HEADER + body` and returns every error message. Warnings are
 /// excluded: they do not stop compilation.
@@ -52,7 +52,7 @@ fn first_helps(body: &str) -> Vec<String> {
 }
 
 // ---------------------------------------------------------------------------
-// Name resolution (§9, §12)
+// Name resolution (§9, §11)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -322,7 +322,7 @@ fn endian_on_an_unbound_unnested_type_is_fine() {
 }
 
 // ---------------------------------------------------------------------------
-// GATT metadata (§10, §12)
+// GATT metadata (§10, §11)
 // ---------------------------------------------------------------------------
 
 fn with_service(chars: &str) -> String {

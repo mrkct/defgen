@@ -66,7 +66,6 @@ fn generated_code_goes_to_stdout_by_default() {
     assert!(out.status.success(), "{}", stderr(&out));
     let header = stdout(&out);
     assert!(header.starts_with("/*"), "stdout should be the header itself, not a summary");
-    assert!(header.contains("#define DEFGEN_SCHEMA_VERSION 2"));
     assert!(header.contains("status_encode"));
     // The MTU warnings (§10) are diagnostics, so they must not pollute the
     // stream a caller might be piping into a file.
@@ -132,7 +131,7 @@ fn a_schema_that_does_not_check_generates_nothing() {
     let dir = scratch("bad_schema");
     let bad = dir.join("bad.defs");
     // The struct declares 8 bits and its fields supply 16 (§6, exact fit).
-    std::fs::write(&bad, "version = 1;\nendian: little;\n---\nstruct S: u8 { a: u16, }\n").unwrap();
+    std::fs::write(&bad, "endian: little;\n---\nstruct S: u8 { a: u16, }\n").unwrap();
     let target = dir.join("bad.h");
 
     let out =

@@ -8,7 +8,7 @@
 //! Swift saying the wrong thing is invisible to string matching.
 //!
 //! The conformance fixture asserts the very same byte strings as its C,
-//! Python and Kotlin counterparts. That is the point of §14 — several
+//! Python and Kotlin counterparts. That is the point of §13 — several
 //! backends, one wire format — so if these ever disagree, one of the
 //! backends is wrong.
 //!
@@ -66,7 +66,7 @@ fn example_file() -> String {
 
 /// A schema with just enough header to be legal, so a test can be one struct.
 fn schema(body: &str) -> String {
-    format!("version = 1;\nendian: little;\n---\n{body}")
+    format!("endian: little;\n---\n{body}")
 }
 
 fn assert_contains(file: &str, needle: &str) {
@@ -154,7 +154,7 @@ fn assert_compiles(file: &str, name: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// Registry (SPEC.md §13 — one backend per target language)
+// Registry (SPEC.md §12 — one backend per target language)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -199,12 +199,6 @@ fn generation_is_deterministic() {
 fn the_file_is_self_contained() {
     let file = example_file();
     assert!(!file.contains("import "), "the generated file needs no import at all — not even Foundation");
-}
-
-#[test]
-fn the_version_pragma_becomes_a_constant() {
-    // SPEC.md §11: applications log or branch on the schema version.
-    assert_contains(&example_file(), "let SCHEMA_VERSION: UInt64 = 2");
 }
 
 #[test]
@@ -319,7 +313,7 @@ fn a_scaled_type_exposes_both_representations() {
 
 #[test]
 fn scaled_rounding_rounds_half_away_from_zero() {
-    // §4, §14: every backend has to agree on a raw integer down to the last
+    // §4, §13: every backend has to agree on a raw integer down to the last
     // unit — Swift's own `.rounded(_:)` supports this rule directly, unlike
     // the JVM's `Math.round` (rounds half *up*) or a hand-rolled algorithm.
     let file = example_file();
@@ -328,7 +322,7 @@ fn scaled_rounding_rounds_half_away_from_zero() {
 
 #[test]
 fn a_closed_enum_is_rawrepresentable_and_rejects_an_unmatched_value() {
-    // §5, §13: a closed enum needs no sum-type case for "unknown" at all —
+    // §5, §12: a closed enum needs no sum-type case for "unknown" at all —
     // `init?(rawValue:)` already expresses "no such variant" as failure.
     let src = schema("enum Mode: u8 { A = 0, Bravo = 1, }\nstruct S: u8 { m: Mode, }");
     let file = file_of(&src, "closed");
@@ -355,7 +349,7 @@ fn an_implicitly_numbered_enum_gets_the_values_the_checker_resolved() {
 
 #[test]
 fn an_open_enum_covers_every_wire_value_as_a_sum_type() {
-    // §5, §13: the unknown case carries the raw value, so a decoded value can
+    // §5, §12: the unknown case carries the raw value, so a decoded value can
     // never be confused with a declared one, and matching on it is
     // exhaustive `switch` with no separate "is it known?" check needed.
     let file = example_file();
@@ -372,7 +366,7 @@ fn an_open_enum_covers_every_wire_value_as_a_sum_type() {
 
 #[test]
 fn a_tagged_union_becomes_an_enum_with_one_case_per_variant() {
-    // §7, §13: cases carry their fields as labeled associated values, so a
+    // §7, §12: cases carry their fields as labeled associated values, so a
     // decoded command is matched with `switch`/`case let`, never by reading a
     // tag by hand.
     let file = example_file();
@@ -472,13 +466,13 @@ fn names_are_recased_without_mangling_acronyms() {
 
 #[test]
 fn active_profile_becomes_camel_case() {
-    // §13: `snake_case` fields become camelCase properties in Swift.
+    // §12: `snake_case` fields become camelCase properties in Swift.
     assert_contains(&example_file(), "var activeProfile: UInt8");
     assert_contains(&example_file(), "activeProfile: UInt8 = 0");
 }
 
 // ---------------------------------------------------------------------------
-// Codec surface (§13)
+// Codec surface (§12)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -545,7 +539,7 @@ fn byte_order_is_resolved_per_root_container() {
 
 #[test]
 fn a_variable_length_field_is_a_string_or_an_array() {
-    // §13: Swift gets the idiomatic container, not C's buffer-plus-length.
+    // §12: Swift gets the idiomatic container, not C's buffer-plus-length.
     let file = example_file();
     assert_contains(&file, "var label: String");
     assert_contains(&file, "label: String = \"\"");
@@ -606,7 +600,7 @@ fn utf8_is_validated_rather_than_patched_up() {
 
 #[test]
 fn every_failure_is_a_defgen_error() {
-    // §13: one enum with a case per kind, so a caller can catch the lot with
+    // §12: one enum with a case per kind, so a caller can catch the lot with
     // one `catch let error as DefgenError`.
     let file = example_file();
     assert_contains(&file, "enum DefgenError: Error, CustomStringConvertible {");

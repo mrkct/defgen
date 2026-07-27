@@ -3,7 +3,7 @@
 
 use defgen::parse;
 
-const HEADER: &str = "version = 1;\nendian: little;\n---\n";
+const HEADER: &str = "endian: little;\n---\n";
 
 /// Parses `HEADER + body` and returns every diagnostic message.
 fn errors(body: &str) -> Vec<String> {
@@ -38,36 +38,22 @@ fn assert_any(body: &str, needle: &str) {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn missing_pragmas_are_named_individually() {
-    let parsed = parse("---\nalias A = u8;\n");
-    let messages: Vec<&str> = parsed.diagnostics.iter().map(|d| d.message.as_str()).collect();
-    assert_eq!(messages, vec!["missing required `version` pragma", "missing required `endian` pragma"]);
-
-    let parsed = parse("version = 1;\n---\n");
-    let messages: Vec<&str> = parsed.diagnostics.iter().map(|d| d.message.as_str()).collect();
-    assert_eq!(messages, vec!["missing required `endian` pragma"]);
-}
-
-#[test]
 fn missing_separator() {
-    let parsed = parse("version = 1;\nendian: big;\n");
+    let parsed = parse("endian: big;\n");
     assert!(parsed.diagnostics.iter().any(|d| d.message == "missing `---` separator"));
 }
 
 #[test]
 fn duplicate_pragma_points_at_the_first_one() {
-    let parsed = parse("version = 1;\nversion = 2;\nendian: big;\n---\n");
+    let parsed = parse("endian: little;\nendian: big;\n---\n");
     let d = &parsed.diagnostics[0];
-    assert_eq!(d.message, "the `version` pragma is declared more than once");
+    assert_eq!(d.message, "the `endian` pragma is declared more than once");
     assert!(d.labels.iter().any(|l| !l.primary && l.message.contains("first declared here")));
 }
 
 #[test]
 fn pragma_punctuation_mixups_are_called_out() {
-    let parsed = parse("version: 1;\nendian: big;\n---\n");
-    assert!(parsed.diagnostics[0].message.contains("`version` pragma is written with `=`, not `:`"));
-
-    let parsed = parse("version = 1;\nendian = big;\n---\n");
+    let parsed = parse("endian = big;\n---\n");
     assert!(
         parsed.diagnostics.iter().any(|d| d.message.contains("`endian` pragma is written with `:`, not `=`"))
     );
@@ -75,7 +61,7 @@ fn pragma_punctuation_mixups_are_called_out() {
 
 #[test]
 fn pragma_below_the_separator_says_where_it_belongs() {
-    let parsed = parse("version = 1;\nendian: big;\n---\nendian: little;\n");
+    let parsed = parse("endian: big;\n---\nendian: little;\n");
     let d = &parsed.diagnostics[0];
     assert!(d.message.contains("`endian` pragma must appear in the file header"), "{}", d.message);
     assert!(d.helps.iter().any(|h| h.contains("above the `---`")));
@@ -83,16 +69,30 @@ fn pragma_below_the_separator_says_where_it_belongs() {
 
 #[test]
 fn declaration_above_the_separator() {
-    let parsed = parse("version = 1;\nendian: big;\nalias A = u8;\n---\n");
+    let parsed = parse("endian: big;\nalias A = u8;\n---\n");
     assert!(parsed.diagnostics.iter().any(|d| d.message == "declaration appears above the `---` separator"));
 }
 
 #[test]
 fn unknown_byte_order_suggests_a_real_one() {
-    let parsed = parse("version = 1;\nendian: litle;\n---\n");
+    let parsed = parse("endian: litle;\n---\n");
     let d = &parsed.diagnostics[0];
     assert_eq!(d.message, "unknown byte order `litle`");
     assert!(d.helps.iter().any(|h| h.contains("did you mean `little`?")));
+}
+
+#[test]
+fn version_pragma_no_longer_exists() {
+    // `version` is not a header pragma anymore, so a file that only ever wrote
+    // one is parsed as a stray declaration, not specially recognized.
+    let parsed = parse("version = 1;\nendian: little;\n---\n");
+    assert!(parsed.schema.is_none());
+    assert!(
+        parsed
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("expected a declaration, found identifier `version`"))
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -481,11 +481,11 @@ fn rendering_reports_the_right_line_and_column() {
     let src = format!("{HEADER}struct S: u8 {{\n    x: u0,\n}}\n");
     let parsed = parse(&src);
     let plain = parsed.diagnostics[0].render_plain("s.defs", &src);
-    assert!(plain.starts_with("s.defs:5:8: error: `u0` is not a valid integer type"), "{plain}");
+    assert!(plain.starts_with("s.defs:4:8: error: `u0` is not a valid integer type"), "{plain}");
 
     // The fancy renderer produces a source snippet with a caret.
     let fancy = parsed.diagnostics[0].render("s.defs", &src, false);
-    assert!(fancy.contains("s.defs:5:8"), "{fancy}");
+    assert!(fancy.contains("s.defs:4:8"), "{fancy}");
     assert!(fancy.contains("x: u0"), "{fancy}");
     assert!(fancy.contains("width must be between 1 and 128"), "{fancy}");
 }
