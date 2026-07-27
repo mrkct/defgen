@@ -253,6 +253,73 @@ fn values_are_carried_in_the_smallest_native_integer() {
     assert_compiles(&header, "widths");
 }
 
+/// A raw `f32`/`f64` field (§2) is carried as `float`/`double` and encodes to
+/// exactly the IEEE-754 bit pattern, little-endian on the wire — this is what
+/// actually pins the byte layout down; the type-mapping tests above only
+/// check the declared C type.
+#[test]
+fn raw_floats_round_trip_ieee754_bit_patterns() {
+    let Some(cc) = cc() else {
+        eprintln!("skipping the raw float round trip: no C compiler found");
+        return;
+    };
+    let src = schema(
+        "struct Floats: u96 { a: f32, b: f64, }\n\
+         service S(uuid: \"180a\") {\n\
+             characteristic C(uuid: \"2a00\", properties: [read]): Floats;\n\
+         }",
+    );
+    let header = header_of(&src, "floats");
+    assert_contains(&header, "float a;");
+    assert_contains(&header, "double b;");
+
+    let dir = scratch("raw_floats");
+    std::fs::write(dir.join("floats.h"), &header).unwrap();
+    let main_c = r#"
+#include "floats.h"
+#include <string.h>
+
+int main(void) {
+    Floats v = { .a = 1.5f, .b = -2.25 };
+    uint8_t buf[FLOATS_SIZE];
+    size_t len;
+    if (floats_encode(&v, buf, sizeof(buf), &len) != DEFGEN_OK) return 1;
+    if (len != FLOATS_SIZE) return 2;
+
+    /* 1.5f, little-endian IEEE-754 binary32. */
+    static const uint8_t expect_a[4] = {0x00, 0x00, 0xc0, 0x3f};
+    if (memcmp(buf, expect_a, 4) != 0) return 3;
+    /* -2.25, little-endian IEEE-754 binary64. */
+    static const uint8_t expect_b[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xc0};
+    if (memcmp(buf + 4, expect_b, 8) != 0) return 4;
+
+    Floats back;
+    if (floats_decode(&back, buf, len) != DEFGEN_OK) return 5;
+    if (back.a != 1.5f) return 6;
+    if (back.b != -2.25) return 7;
+    return 0;
+}
+"#;
+    std::fs::write(dir.join("main.c"), main_c).unwrap();
+    let binary = dir.join("floats_test");
+    let build = Command::new(&cc)
+        .args(["-std=c99", "-Wall", "-Wextra", "-pedantic", "-Werror"])
+        .arg(format!("-I{}", dir.display()))
+        .arg("-o")
+        .arg(&binary)
+        .arg(dir.join("main.c"))
+        .output()
+        .expect("failed to run the C compiler");
+    assert!(
+        build.status.success(),
+        "the float round-trip fixture did not build:\n{}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+
+    let run = Command::new(&binary).output().expect("failed to run the float round-trip fixture");
+    assert!(run.status.success(), "the raw float round trip failed with exit code {:?}", run.status.code());
+}
+
 #[test]
 fn an_alias_keeps_the_name_the_author_declared() {
     // §3: an alias generates no runtime type, but the domain name survives.

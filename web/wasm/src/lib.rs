@@ -417,6 +417,7 @@ fn wire_type(model: &Model, ty: &WireType) -> String {
             ])
         }
         WireType::Bool => obj(&[("kind", s("bool"))]),
+        WireType::Float(f) => obj(&[("kind", s("float")), ("bits", n(f.bits()))]),
         WireType::Named(id) => {
             let target = model.get(*id);
             obj(&[("kind", s("named")), ("name", s(&target.name)), ("jsName", s(&ident(&target.name)))])

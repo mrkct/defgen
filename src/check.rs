@@ -868,6 +868,7 @@ impl<'a> Checker<'a> {
             ast::ScalarKind::UInt(n) => Some(WireType::UInt(*n)),
             ast::ScalarKind::Int(n) => Some(WireType::Int(*n)),
             ast::ScalarKind::Bool => Some(WireType::Bool),
+            ast::ScalarKind::Float(f) => Some(WireType::Float(*f)),
             ast::ScalarKind::Named(ident) => {
                 let id = self.lookup(ident, Use::Field)?;
                 self.mark_nested(id);
@@ -882,6 +883,7 @@ impl<'a> Checker<'a> {
         match wire {
             WireType::UInt(n) | WireType::Int(n) => Layout::fixed(*n),
             WireType::Bool => Layout::fixed(1),
+            WireType::Float(f) => Layout::fixed(f.bits()),
             WireType::Named(id) => self.types[id.0].layout,
             // `resolve_scalar` never produces these.
             WireType::Array { .. } | WireType::VarArray { .. } | WireType::Str { .. } => Layout::fixed(0),
@@ -1231,7 +1233,7 @@ fn plural(n: u32) -> &'static str {
 fn primitive_like(name: &str) -> Option<&'static str> {
     match name {
         "bool" => Some("`bool`"),
-        "f32" | "f64" => Some("a physical type"),
+        "f32" | "f64" => Some("a primitive type"),
         "string" => Some("`string`"),
         _ => {
             let (prefix, digits) = name.split_at(1);

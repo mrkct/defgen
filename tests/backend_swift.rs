@@ -299,6 +299,25 @@ fn an_alias_keeps_the_name_the_author_declared() {
     assert_contains(&file, "volume: Volume = 0");
 }
 
+/// A raw `f32`/`f64` field (§2) is carried as `Float`/`Double` and packed
+/// through its IEEE-754 `bitPattern`, the same way `scaled` already reaches
+/// the wire. No `swiftc` in this environment to compile-check it, so this
+/// only pins the shape; the C, Python and Java backends carry the executable
+/// version of the same round trip (§13).
+#[test]
+fn raw_floats_are_carried_as_float_and_double() {
+    let src = schema("struct Floats: u96 { a: f32, b: f64, }");
+    let file = file_of(&src, "floats");
+    assert_contains(&file, "var a: Float");
+    assert_contains(&file, "var b: Double");
+    assert_contains(&file, "a: Float = 0.0,");
+    assert_contains(&file, "b: Double = 0.0");
+    assert_contains(&file, "UInt128(a.bitPattern)");
+    assert_contains(&file, "UInt128(b.bitPattern)");
+    assert_contains(&file, "Float(bitPattern: UInt32(bits.get(off, 32)))");
+    assert_contains(&file, "Double(bitPattern: UInt64(bits.get((off + 32), 64)))");
+}
+
 #[test]
 fn a_scaled_type_exposes_both_representations() {
     // §4: the physical value to callers, the raw integer for exact round trips.

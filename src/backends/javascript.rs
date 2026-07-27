@@ -356,6 +356,10 @@ struct Needs {
     utf8: bool,
     /// A variable-length root, whose encoding is a prefix followed by a tail.
     concat: bool,
+    /// A raw `f32` field, which needs the bit-reinterpretation helpers (§2).
+    float32: bool,
+    /// A raw `f64` field, which needs the bit-reinterpretation helpers (§2).
+    float64: bool,
 }
 
 struct Emitter<'m> {
@@ -506,6 +510,7 @@ impl<'m> Emitter<'m> {
                 }
             }
             WireType::Bool => "boolean".to_string(),
+            WireType::Float(_) => "number".to_string(),
             WireType::Named(id) => {
                 let def = self.m.get(*id);
                 match &def.kind {
@@ -527,6 +532,7 @@ impl<'m> Emitter<'m> {
         match ty {
             WireType::UInt(n) | WireType::Int(n) => uint_lit(0, *n),
             WireType::Bool => "false".to_string(),
+            WireType::Float(_) => "0".to_string(),
             WireType::Str { .. } => "\"\"".to_string(),
             WireType::VarArray { .. } => "[]".to_string(),
             WireType::Array { elem, count } => {
@@ -566,6 +572,7 @@ impl<'m> Emitter<'m> {
             WireType::UInt(n) => format!("u{n}"),
             WireType::Int(n) => format!("i{n}"),
             WireType::Bool => "bool".to_string(),
+            WireType::Float(f) => f.as_str().to_string(),
             WireType::Named(id) => self.m.get(*id).name.clone(),
             WireType::Array { elem, count } => format!("{}[{count}]", self.wire_str(elem)),
             WireType::VarArray { elem, max } => format!("{}[max: {max}]", self.wire_str(elem)),
@@ -971,6 +978,72 @@ impl<'m> Emitter<'m> {
                     "  if (remainder >= 0.5) return whole + 1;",
                     "  if (remainder <= -0.5) return whole - 1;",
                     "  return whole;",
+                    "}",
+                ],
+            );
+        }
+
+        if self.needs.float32 {
+            self.blank();
+            self.lines(
+                0,
+                &[
+                    "/**",
+                    " * `value`'s IEEE-754 bit pattern, as an unsigned 32-bit `bigint` (§2). Goes",
+                    " * through a scratch `DataView` rather than a bit-level reimplementation of",
+                    " * `float`, since the platform already has to get this exactly right.",
+                    " *",
+                    " * @param {number} value",
+                    " * @returns {bigint}",
+                    " */",
+                    "function defgenF32Bits(value) {",
+                    "  const view = new DataView(new ArrayBuffer(4));",
+                    "  view.setFloat32(0, value, false);",
+                    "  return BigInt(view.getUint32(0, false));",
+                    "}",
+                    "",
+                    "/**",
+                    " * The reverse of `defgenF32Bits`.",
+                    " *",
+                    " * @param {bigint} bits",
+                    " * @returns {number}",
+                    " */",
+                    "function defgenBitsF32(bits) {",
+                    "  const view = new DataView(new ArrayBuffer(4));",
+                    "  view.setUint32(0, Number(bits), false);",
+                    "  return view.getFloat32(0, false);",
+                    "}",
+                ],
+            );
+        }
+
+        if self.needs.float64 {
+            self.blank();
+            self.lines(
+                0,
+                &[
+                    "/**",
+                    " * `value`'s IEEE-754 bit pattern, as an unsigned 64-bit `bigint` (§2).",
+                    " *",
+                    " * @param {number} value",
+                    " * @returns {bigint}",
+                    " */",
+                    "function defgenF64Bits(value) {",
+                    "  const view = new DataView(new ArrayBuffer(8));",
+                    "  view.setFloat64(0, value, false);",
+                    "  return view.getBigUint64(0, false);",
+                    "}",
+                    "",
+                    "/**",
+                    " * The reverse of `defgenF64Bits`.",
+                    " *",
+                    " * @param {bigint} bits",
+                    " * @returns {number}",
+                    " */",
+                    "function defgenBitsF64(bits) {",
+                    "  const view = new DataView(new ArrayBuffer(8));",
+                    "  view.setBigUint64(0, bits, false);",
+                    "  return view.getFloat64(0, false);",
                     "}",
                 ],
             );
@@ -2022,6 +2095,14 @@ impl<'m> Emitter<'m> {
                 self.line(ind, &format!("bits.put({off}, {n}, defgenCheckInt({expr}, {n}, \"{label}\"));"));
             }
             WireType::Bool => self.line(ind, &format!("bits.put({off}, 1, {expr} ? 1n : 0n);")),
+            WireType::Float(FloatType::F32) => {
+                self.needs.float32 = true;
+                self.line(ind, &format!("bits.put({off}, 32, defgenF32Bits({expr}));"));
+            }
+            WireType::Float(FloatType::F64) => {
+                self.needs.float64 = true;
+                self.line(ind, &format!("bits.put({off}, 64, defgenF64Bits({expr}));"));
+            }
             WireType::Named(id) => {
                 let def = self.m.get(*id);
                 match &def.kind {
@@ -2094,6 +2175,14 @@ impl<'m> Emitter<'m> {
                 from_big(&format!("defgenSext(bits.get({off}, {n}), {n})"), *n)
             }
             WireType::Bool => format!("bits.get({off}, 1) !== 0n"),
+            WireType::Float(FloatType::F32) => {
+                self.needs.float32 = true;
+                format!("defgenBitsF32(bits.get({off}, 32))")
+            }
+            WireType::Float(FloatType::F64) => {
+                self.needs.float64 = true;
+                format!("defgenBitsF64(bits.get({off}, 64))")
+            }
             WireType::Named(id) => {
                 let def = self.m.get(*id);
                 match &def.kind {

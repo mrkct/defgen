@@ -189,7 +189,7 @@ scalar_type
     ;
 
 primitive_type
-    = unsigned_type | signed_type | "bool"
+    = unsigned_type | signed_type | "bool" | float_type
     ;
 
 integer_type

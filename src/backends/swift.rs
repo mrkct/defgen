@@ -371,7 +371,11 @@ impl<'m> Emitter<'m> {
 
     fn scan_type(&mut self, ty: &WireType) {
         match ty {
-            WireType::UInt(_) | WireType::Int(_) | WireType::Bool | WireType::Named(_) => {}
+            WireType::UInt(_)
+            | WireType::Int(_)
+            | WireType::Bool
+            | WireType::Float(_)
+            | WireType::Named(_) => {}
             WireType::Str { .. } => self.needs.utf8 = true,
             WireType::Array { elem, .. } => {
                 self.needs.arrays = true;
@@ -407,6 +411,8 @@ impl<'m> Emitter<'m> {
             WireType::UInt(n) => carrier_type(*n, false).to_string(),
             WireType::Int(n) => carrier_type(*n, true).to_string(),
             WireType::Bool => "Bool".to_string(),
+            WireType::Float(FloatType::F32) => "Float".to_string(),
+            WireType::Float(FloatType::F64) => "Double".to_string(),
             WireType::Named(id) => ident(&self.m.get(*id).name),
             WireType::Array { elem, .. } | WireType::VarArray { elem, .. } => {
                 format!("[{}]", self.swift_type(elem))
@@ -423,6 +429,7 @@ impl<'m> Emitter<'m> {
         match ty {
             WireType::UInt(_) | WireType::Int(_) => "0".to_string(),
             WireType::Bool => "false".to_string(),
+            WireType::Float(_) => "0.0".to_string(),
             WireType::Str { .. } => "\"\"".to_string(),
             WireType::VarArray { .. } => "[]".to_string(),
             WireType::Array { elem, count } => {
@@ -478,6 +485,7 @@ impl<'m> Emitter<'m> {
             WireType::UInt(n) => format!("u{n}"),
             WireType::Int(n) => format!("i{n}"),
             WireType::Bool => "bool".to_string(),
+            WireType::Float(f) => f.as_str().to_string(),
             WireType::Named(id) => self.m.get(*id).name.clone(),
             WireType::Array { elem, count } => format!("{}[{count}]", self.wire_str(elem)),
             WireType::VarArray { elem, max } => format!("{}[max: {max}]", self.wire_str(elem)),
@@ -490,7 +498,7 @@ impl<'m> Emitter<'m> {
     /// uniformly — see the module doc) can.
     fn unpack_throws(&self, ty: &WireType) -> bool {
         match ty {
-            WireType::UInt(_) | WireType::Int(_) | WireType::Bool => false,
+            WireType::UInt(_) | WireType::Int(_) | WireType::Bool | WireType::Float(_) => false,
             WireType::Named(id) => match &self.m.get(*id).kind {
                 TypeKind::Alias(a) => self.unpack_throws(&a.target),
                 TypeKind::Scaled(_) => false,
@@ -1724,6 +1732,9 @@ impl<'m> Emitter<'m> {
             WireType::Bool => {
                 self.line(ind, &format!("bits.put({off}, 1, {expr} ? 1 : 0)"));
             }
+            WireType::Float(f) => {
+                self.line(ind, &format!("bits.put({off}, {}, UInt128({expr}.bitPattern))", f.bits()));
+            }
             WireType::Named(id) => {
                 let def = self.m.get(*id);
                 let name = ident(&def.name);
@@ -1793,6 +1804,12 @@ impl<'m> Emitter<'m> {
                 format!("{}(defgenSext(bits.get({off}, {n}), {n}))", carrier_type(*n, true))
             }
             WireType::Bool => format!("(bits.get({off}, 1) != 0)"),
+            WireType::Float(FloatType::F32) => {
+                format!("Float(bitPattern: UInt32(bits.get({off}, 32)))")
+            }
+            WireType::Float(FloatType::F64) => {
+                format!("Double(bitPattern: UInt64(bits.get({off}, 64)))")
+            }
             WireType::Named(id) => {
                 let def = self.m.get(*id);
                 let name = ident(&def.name);

@@ -185,6 +185,19 @@ fn py_bool(v: bool) -> &'static str {
     if v { "True" } else { "False" }
 }
 
+/// The `struct` format codes for `f`'s IEEE-754 pattern — itself, and the
+/// same-width unsigned integer `_bits.put`/`.get` speaks — plus its bit
+/// width. Little-endian throughout: the pattern round-trips through
+/// `struct.pack`/`unpack` purely to reinterpret bits, so the byte order used
+/// there is arbitrary as long as packing and unpacking agree, and `<` avoids
+/// the padding a native/`@`/`=` mode could insert.
+fn float_struct_fmts(f: FloatType) -> (&'static str, &'static str, u32) {
+    match f {
+        FloatType::F32 => ("f", "I", 32),
+        FloatType::F64 => ("d", "Q", 64),
+    }
+}
+
 /// The exception hierarchy every generated module carries: one class per way a
 /// value can fail to match the schema, under a base a caller can catch whole.
 const ERRORS: &[(&str, &str, &str)] = &[
@@ -237,6 +250,8 @@ struct Needs {
     sequences: bool,
     /// A `string`, which needs the UTF-8 helpers (§6.3).
     utf8: bool,
+    /// A raw `f32`/`f64` field, which needs the `struct` module (§2).
+    raw_float: bool,
 }
 
 struct Emitter<'m> {
@@ -416,6 +431,7 @@ impl<'m> Emitter<'m> {
     fn scan_type(&mut self, ty: &WireType) {
         match ty {
             WireType::UInt(_) | WireType::Int(_) | WireType::Bool | WireType::Named(_) => {}
+            WireType::Float(_) => self.needs.raw_float = true,
             WireType::Str { .. } => self.needs.utf8 = true,
             WireType::Array { elem, .. } | WireType::VarArray { elem, .. } => {
                 self.needs.sequences = true;
@@ -445,6 +461,7 @@ impl<'m> Emitter<'m> {
         match ty {
             WireType::UInt(_) | WireType::Int(_) => "int".to_string(),
             WireType::Bool => "bool".to_string(),
+            WireType::Float(_) => "float".to_string(),
             WireType::Named(id) => {
                 let def = self.m.get(*id);
                 match &def.kind {
@@ -466,6 +483,7 @@ impl<'m> Emitter<'m> {
         match ty {
             WireType::UInt(_) | WireType::Int(_) => "0".to_string(),
             WireType::Bool => "False".to_string(),
+            WireType::Float(_) => "0.0".to_string(),
             WireType::Str { .. } => "\"\"".to_string(),
             WireType::VarArray { .. } => "[]".to_string(),
             WireType::Array { elem, count } => format!("[{} for _ in range({count})]", self.fresh(elem)),
@@ -536,6 +554,7 @@ impl<'m> Emitter<'m> {
             WireType::UInt(n) => format!("u{n}"),
             WireType::Int(n) => format!("i{n}"),
             WireType::Bool => "bool".to_string(),
+            WireType::Float(f) => f.as_str().to_string(),
             WireType::Named(id) => self.m.get(*id).name.clone(),
             WireType::Array { elem, count } => format!("{}[{count}]", self.wire_str(elem)),
             WireType::VarArray { elem, max } => format!("{}[max: {max}]", self.wire_str(elem)),
@@ -585,6 +604,9 @@ impl<'m> Emitter<'m> {
 
         if self.needs.enums {
             self.line(0, "import enum");
+        }
+        if self.needs.raw_float {
+            self.line(0, "import struct");
         }
         if self.needs.dataclass {
             let names = if self.needs.default_factory { "dataclass, field" } else { "dataclass" };
@@ -1636,6 +1658,11 @@ impl<'m> Emitter<'m> {
                 self.line(ind, &format!("_bits.put({off}, {n}, _check_int({expr}, {n}, \"{label}\"))"))
             }
             WireType::Bool => self.line(ind, &format!("_bits.put({off}, 1, 1 if {expr} else 0)")),
+            WireType::Float(f) => {
+                let (float_fmt, uint_fmt, bits) = float_struct_fmts(*f);
+                let raw = format!("struct.unpack(\"<{uint_fmt}\", struct.pack(\"<{float_fmt}\", {expr}))[0]");
+                self.line(ind, &format!("_bits.put({off}, {bits}, {raw})"));
+            }
             WireType::Named(id) => {
                 let def = self.m.get(*id);
                 let name = ident(&def.name);
@@ -1692,6 +1719,12 @@ impl<'m> Emitter<'m> {
             WireType::UInt(n) => format!("_bits.get({off}, {n})"),
             WireType::Int(n) => format!("_sext(_bits.get({off}, {n}), {n})"),
             WireType::Bool => format!("_bits.get({off}, 1) != 0"),
+            WireType::Float(f) => {
+                let (float_fmt, uint_fmt, bits) = float_struct_fmts(*f);
+                format!(
+                    "struct.unpack(\"<{float_fmt}\", struct.pack(\"<{uint_fmt}\", _bits.get({off}, {bits})))[0]"
+                )
+            }
             WireType::Named(id) => {
                 let def = self.m.get(*id);
                 let name = ident(&def.name);

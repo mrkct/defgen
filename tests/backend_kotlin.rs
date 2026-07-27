@@ -310,6 +310,23 @@ fn an_alias_keeps_the_name_the_author_declared() {
     assert_contains(&file, "var volume: Volume = 0.toUByte()");
 }
 
+/// A raw `f32`/`f64` field (§2) is carried as `Float`/`Double` and packed
+/// through its IEEE-754 bit pattern, the same way `scaled` already reaches
+/// the wire. No `kotlinc` in this environment to compile-check it, so this
+/// only pins the shape; the C, Python and Java backends carry the executable
+/// version of the same round trip (§13).
+#[test]
+fn raw_floats_are_carried_as_float_and_double() {
+    let src = schema("struct Floats: u96 { a: f32, b: f64, }");
+    let file = file_of(&src, "floats");
+    assert_contains(&file, "var a: Float = 0.0f");
+    assert_contains(&file, "var b: Double = 0.0");
+    assert_contains(&file, "a.toRawBits().toLong()");
+    assert_contains(&file, "b.toRawBits()");
+    assert_contains(&file, "Float.fromBits(");
+    assert_contains(&file, "Double.fromBits(");
+}
+
 #[test]
 fn a_scaled_type_exposes_both_representations() {
     // §4: the physical value to callers, the raw integer for exact round trips.

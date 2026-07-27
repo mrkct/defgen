@@ -189,6 +189,20 @@ function intEditor(wire) {
   };
 }
 
+function floatEditor() {
+  const input = el("input", { type: "number", class: "num-input", step: "any" });
+  input.value = "0";
+  return {
+    node: input,
+    get: () => {
+      const v = Number(input.value);
+      if (!Number.isFinite(v)) throw new Error(`"${input.value}" is not a number`);
+      return v;
+    },
+    set: (v) => (input.value = String(v)),
+  };
+}
+
 function scaledEditor(shape) {
   const input = el("input", { type: "number", class: "num-input", step: "any" });
   input.value = "0";
@@ -442,6 +456,8 @@ function buildValueEditor(wire, ctx) {
     case "uint":
     case "int":
       return intEditor(wire);
+    case "float":
+      return floatEditor();
     case "string":
       return stringEditor(wire);
     case "array":
@@ -469,6 +485,8 @@ function renderValue(wire, value, ctx) {
     case "uint":
     case "int":
       return el("span", { class: "value-num", text: formatInt(value) });
+    case "float":
+      return el("span", { class: "value-num", text: String(value) });
     case "string":
       return el("span", { class: "value-str", text: JSON.stringify(value) });
     case "array":

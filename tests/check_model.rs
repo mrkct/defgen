@@ -362,6 +362,25 @@ fn a_signed_constant_at_i128_min_round_trips_exactly() {
 }
 
 #[test]
+fn raw_f32_and_f64_fields_resolve_to_their_ieee754_widths() {
+    let src = "endian: little;\n---\nstruct S: u96 { a: f32, b: f64, }";
+    let compiled = defgen::compile(src);
+    assert!(compiled.diagnostics.is_empty(), "{:?}", compiled.diagnostics);
+    let model = compiled.model.expect("model");
+    let s = ty(&model, "S").as_struct().unwrap();
+
+    let a = &s.fields[0];
+    assert_eq!(a.ty, WireType::Float(FloatType::F32));
+    assert_eq!(a.layout, Layout::fixed(32));
+    assert_eq!(a.offset_bits, 0);
+
+    let b = &s.fields[1];
+    assert_eq!(b.ty, WireType::Float(FloatType::F64));
+    assert_eq!(b.layout, Layout::fixed(64));
+    assert_eq!(b.offset_bits, 32);
+}
+
+#[test]
 fn underlying_follows_alias_chains() {
     let model = example();
     let volume = ty(&model, "Volume").id;

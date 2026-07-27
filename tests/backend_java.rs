@@ -343,6 +343,79 @@ fn an_alias_resolves_away_but_keeps_its_name_in_the_documentation() {
     assert!(!file.contains("class Volume"), "an alias generates no runtime type");
 }
 
+/// A raw `f32`/`f64` field (§2) is carried as `float`/`double` and encodes to
+/// exactly the IEEE-754 bit pattern, little-endian on the wire — this is what
+/// actually pins the byte layout down, complementing the C backend's version
+/// of the same test (§13).
+#[test]
+fn raw_floats_round_trip_ieee754_bit_patterns() {
+    let (Some(javac), Some(java)) = (javac(), java()) else {
+        eprintln!("skipping the raw float round trip: no JDK found");
+        return;
+    };
+    let src = schema(
+        "struct Floats: u96 { a: f32, b: f64, }\n\
+         service S(uuid: \"180a\") {\n\
+             characteristic C(uuid: \"2a00\", properties: [read]): Floats;\n\
+         }",
+    );
+    let (name, file) = generate(&src, "float_schema");
+    assert_eq!(name, "FloatSchema.java");
+    assert_contains(&file, "float a,");
+    assert_contains(&file, "double b");
+
+    let dir = scratch("raw_floats");
+    std::fs::write(dir.join(&name), &file).unwrap();
+
+    let main = r#"
+public class Main {
+    public static void main(String[] args) throws Exception {
+        FloatSchema.Floats v = new FloatSchema.Floats(1.5f, -2.25);
+        byte[] buf = v.encode();
+        if (buf.length != 12) throw new RuntimeException("wrong length: " + buf.length);
+
+        // 1.5f, little-endian IEEE-754 binary32.
+        byte[] expectA = { 0x00, 0x00, (byte) 0xc0, 0x3f };
+        for (int i = 0; i < 4; i++) {
+            if (buf[i] != expectA[i]) throw new RuntimeException("byte " + i + " of `a` is wrong");
+        }
+        // -2.25, little-endian IEEE-754 binary64.
+        byte[] expectB = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, (byte) 0xc0 };
+        for (int i = 0; i < 8; i++) {
+            if (buf[4 + i] != expectB[i]) throw new RuntimeException("byte " + i + " of `b` is wrong");
+        }
+
+        FloatSchema.Floats back = FloatSchema.Floats.decode(buf);
+        if (back.a() != 1.5f) throw new RuntimeException("`a` did not round-trip: " + back.a());
+        if (back.b() != -2.25) throw new RuntimeException("`b` did not round-trip: " + back.b());
+    }
+}
+"#;
+    std::fs::write(dir.join("Main.java"), main).unwrap();
+
+    let classes = dir.join("out");
+    let build = Command::new(&javac)
+        .args(["-encoding", "UTF-8", "-Xlint:all", "-Werror", "-d"])
+        .arg(&classes)
+        .arg(dir.join(&name))
+        .arg(dir.join("Main.java"))
+        .output()
+        .expect("failed to run javac");
+    assert!(
+        build.status.success(),
+        "the float round-trip fixture did not build:\n{}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+
+    let run = Command::new(&java).arg("-cp").arg(&classes).arg("Main").output().expect("failed to run java");
+    assert!(
+        run.status.success(),
+        "the raw float round trip failed:\n{}{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+}
+
 #[test]
 fn a_scaled_type_exposes_both_representations() {
     // §4: the physical value to callers, the raw integer for exact round trips.

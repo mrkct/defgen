@@ -347,6 +347,36 @@ fn float_lit(v: f64, physical: FloatType) -> String {
     format!("{s}{}", if single { "f" } else { "" })
 }
 
+/// The Java type a raw `f32`/`f64` wire value is held in (§2).
+fn float_java_type(f: FloatType) -> &'static str {
+    match f {
+        FloatType::F32 => "float",
+        FloatType::F64 => "double",
+    }
+}
+
+/// `expr`'s IEEE-754 bit pattern as a Java integer, plus its width. Widening
+/// the `int` `floatToRawIntBits` returns into the `long` `BigInteger.valueOf`
+/// wants sign-extends it, but `DefgenBits.put` masks to the low `bits` bits
+/// before storing, so the sign-extended high bits are discarded and the
+/// pattern survives exactly (§2, §8).
+fn float_raw_bits_expr(f: FloatType, expr: &str) -> (String, u32) {
+    match f {
+        FloatType::F32 => (format!("Float.floatToRawIntBits({expr})"), 32),
+        FloatType::F64 => (format!("Double.doubleToRawLongBits({expr})"), 64),
+    }
+}
+
+/// The reverse of [`float_raw_bits_expr`]: reinterprets `bits`'s wire pattern
+/// (a non-negative `BigInteger`) as `f`. `intValue`/`longValue` keep only the
+/// low 32/64 bits, which is exactly the pattern to reinterpret.
+fn float_from_bits_expr(f: FloatType, bits: &str) -> String {
+    match f {
+        FloatType::F32 => format!("Float.intBitsToFloat({bits}.intValue())"),
+        FloatType::F64 => format!("Double.longBitsToDouble({bits}.longValue())"),
+    }
+}
+
 /// `true`/`false` — for embedding a root's fixed byte order as a literal rather
 /// than threading it as a parameter, wherever the call site is a static method
 /// rather than an instance one.
@@ -599,7 +629,11 @@ impl<'m> Emitter<'m> {
 
     fn scan_type(&mut self, ty: &WireType) {
         match ty {
-            WireType::UInt(_) | WireType::Int(_) | WireType::Bool | WireType::Named(_) => {}
+            WireType::UInt(_)
+            | WireType::Int(_)
+            | WireType::Bool
+            | WireType::Float(_)
+            | WireType::Named(_) => {}
             WireType::Str { .. } => self.needs.strings = true,
             WireType::Array { elem, .. } => {
                 self.needs.fixed_arrays = true;
@@ -635,6 +669,7 @@ impl<'m> Emitter<'m> {
             WireType::UInt(n) => carrier_type(*n, false).to_string(),
             WireType::Int(n) => carrier_type(*n, true).to_string(),
             WireType::Bool => "boolean".to_string(),
+            WireType::Float(f) => float_java_type(*f).to_string(),
             WireType::Named(id) => {
                 let def = self.m.get(*id);
                 match &def.kind {
@@ -663,6 +698,8 @@ impl<'m> Emitter<'m> {
             WireType::UInt(n) => int_lit(0, *n, false),
             WireType::Int(n) => int_lit(0, *n, true),
             WireType::Bool => "false".to_string(),
+            WireType::Float(FloatType::F32) => "0.0f".to_string(),
+            WireType::Float(FloatType::F64) => "0.0".to_string(),
             WireType::Str { .. } => "\"\"".to_string(),
             WireType::VarArray { .. } => "List.of()".to_string(),
             WireType::Array { elem, count } => {
@@ -733,6 +770,7 @@ impl<'m> Emitter<'m> {
             WireType::UInt(n) => format!("u{n}"),
             WireType::Int(n) => format!("i{n}"),
             WireType::Bool => "bool".to_string(),
+            WireType::Float(f) => f.as_str().to_string(),
             WireType::Named(id) => self.m.get(*id).name.clone(),
             WireType::Array { elem, count } => format!("{}[{count}]", self.wire_str(elem)),
             WireType::VarArray { elem, max } => format!("{}[max: {max}]", self.wire_str(elem)),
@@ -1993,6 +2031,10 @@ impl<'m> Emitter<'m> {
             WireType::Bool => {
                 self.put(ind, off, 1, &format!("{expr} ? BigInteger.ONE : BigInteger.ZERO"));
             }
+            WireType::Float(f) => {
+                let (raw, bits) = float_raw_bits_expr(*f, expr);
+                self.put(ind, off, bits, &format!("BigInteger.valueOf({raw})"));
+            }
             WireType::Named(id) => {
                 let def = self.m.get(*id);
                 let name = self.ident(&def.name);
@@ -2103,6 +2145,7 @@ impl<'m> Emitter<'m> {
                 from_bigint(&format!("defgenSext({raw}, {n})"), *n, true)
             }
             WireType::Bool => format!("bits.get({off}, 1).signum() != 0"),
+            WireType::Float(f) => float_from_bits_expr(*f, &format!("bits.get({off}, {})", f.bits())),
             WireType::Named(id) => {
                 let def = self.m.get(*id);
                 let name = self.ident(&def.name);

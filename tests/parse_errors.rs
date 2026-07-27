@@ -114,15 +114,6 @@ fn signed_one_bit_explains_the_sign_bit() {
 }
 
 #[test]
-fn floats_are_not_wire_types() {
-    assert_any("struct S: u32 { x: f32, }", "`f32` is not a wire type");
-    let src = format!("{HEADER}struct S: u32 {{ x: f32, }}");
-    let parsed = parse(&src);
-    let d = parsed.diagnostics.iter().find(|d| d.message.contains("f32")).unwrap();
-    assert!(d.helps.iter().any(|h| h.contains("scaled")));
-}
-
-#[test]
 fn string_needs_a_max_bound() {
     assert_first("alias A = string;", "`string` requires a maximum byte length");
     assert_first("struct S { s: string(24), }", "expected `max` in `string(...)`");
