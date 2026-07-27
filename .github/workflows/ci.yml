@@ -20,6 +20,30 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all -- --check
 
+  wasm:
+    name: playground (wasm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            web/wasm
+      - run: cargo fmt --all --manifest-path web/wasm/Cargo.toml -- --check
+      - run: >
+          cargo clippy --manifest-path web/wasm/Cargo.toml
+          --target wasm32-unknown-unknown --all-targets -- -D warnings
+      # The playground has to be the same compiler, not a lookalike: this
+      # builds both and requires them to generate identical bytes.
+      - run: cargo build --release --locked
+      - run: ./web/build.sh
+      - run: node web/check.mjs
+
   clippy:
     name: cargo clippy
     runs-on: ubuntu-latest

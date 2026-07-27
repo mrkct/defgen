@@ -1,1 +1,6 @@
 /target
+web/wasm/target
+
+# Built by web/build.sh into the directory it deploys.
+web/site/defgen.wasm
+web/site/examples/hearing-aid.defs

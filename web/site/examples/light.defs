@@ -1,0 +1,32 @@
+// A minimal schema: one service, one notified characteristic.
+// Everything here is explained in SPEC.md.
+
+version = 1;
+
+// Default byte order for every root container in this file.
+endian: little;
+
+---
+
+/// Bulb brightness, 0-100.
+alias Brightness = u8;
+
+enum PowerState: u1 {
+    Off = 0,
+    On = 1,
+}
+
+/// State pushed via BLE notify. The `: u16` is the container width, and the
+/// fields have to account for all 16 bits exactly — no implicit padding.
+struct LightState: u16 {
+    brightness: Brightness,
+    power: PowerState,
+    reserved bits: u7,
+}
+
+service Light(uuid: "0000ffe0-0000-1000-8000-00805f9b34fb") {
+    characteristic StateChar(
+        uuid: "0000ffe1-0000-1000-8000-00805f9b34fb",
+        properties: [read, notify],
+    ): LightState;
+}
