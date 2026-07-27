@@ -27,6 +27,7 @@ it on every pull request.
 | `site/` | The page: hand-written HTML, CSS and ES modules. No bundler, no dependencies, no build step of its own. |
 | `site/defgen.js` | The JavaScript half of the wasm ABI. |
 | `site/app.js` | The UI — editor, options, result panels. |
+| `site/highlight.js` | A small regex-based syntax highlighter for the schema and the six backends' output. |
 | `build.sh` | Builds the module into `site/`, which is then a complete static site. |
 | `check.mjs` | The wasm-against-CLI conformance check described above. |
 

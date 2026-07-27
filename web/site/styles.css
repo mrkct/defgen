@@ -23,6 +23,13 @@
   --warning-soft: #fdf3e0;
   --ok: #1a7f47;
 
+  --syn-keyword: #a626a4;
+  --syn-string: #50a14f;
+  --syn-number: #986801;
+  --syn-comment: #a0a1a7;
+  --syn-type: #0184bc;
+  --syn-attribute: #4078f2;
+
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
@@ -51,6 +58,13 @@
     --warning: #ffc773;
     --warning-soft: #2a2214;
     --ok: #5dd393;
+
+    --syn-keyword: #c678dd;
+    --syn-string: #98c379;
+    --syn-number: #d19a66;
+    --syn-comment: #7f848e;
+    --syn-type: #61afef;
+    --syn-attribute: #56b6c2;
   }
 }
 
@@ -440,18 +454,48 @@ main {
   user-select: none;
 }
 
+/* The highlighted schema and the textarea that edits it sit in the same box,
+ * one on top of the other: the textarea's own text is transparent, so what a
+ * typist sees is the `pre` underneath, and what they edit is the (invisible)
+ * text above it. Padding, font and line-height must match exactly or the
+ * caret drifts from the letter it is next to. */
+.code-input {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.highlight,
 #source {
+  position: absolute;
+  inset: 0;
+  margin: 0;
   padding: 10px 12px;
   border: 0;
-  background: none;
-  color: inherit;
   font-family: var(--mono);
   font-size: var(--code-size);
   line-height: var(--code-line);
-  resize: none;
-  overflow: auto;
   white-space: pre;
   tab-size: 4;
+}
+
+.highlight {
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--text);
+}
+
+.highlight code {
+  font: inherit;
+}
+
+#source {
+  background: none;
+  color: transparent;
+  caret-color: var(--text);
+  -webkit-text-fill-color: transparent;
+  resize: none;
+  overflow: auto;
 }
 
 #source:focus {
@@ -471,6 +515,31 @@ main {
   font-size: var(--code-size);
   line-height: var(--code-line);
   tab-size: 4;
+}
+
+.tok-keyword {
+  color: var(--syn-keyword);
+}
+
+.tok-string {
+  color: var(--syn-string);
+}
+
+.tok-number {
+  color: var(--syn-number);
+}
+
+.tok-comment {
+  color: var(--syn-comment);
+  font-style: italic;
+}
+
+.tok-type {
+  color: var(--syn-type);
+}
+
+.tok-attribute {
+  color: var(--syn-attribute);
 }
 
 .result .placeholder {
