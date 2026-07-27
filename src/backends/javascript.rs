@@ -148,7 +148,12 @@ const RESERVED: &[&str] = &[
 
 /// A schema name as a JavaScript identifier, escaped where it would collide
 /// with the language's or the module's own vocabulary.
-fn ident(name: &str) -> String {
+///
+/// `pub` so a consumer of the generated module — the wasm playground's Device
+/// tab (§ web/wasm) — can compute the exact class/member name a schema name
+/// turned into, without re-deriving (and risking drifting from) this escaping
+/// rule itself.
+pub fn ident(name: &str) -> String {
     let internal = name.starts_with('_');
     let runtime = name.starts_with("defgen") || name.starts_with("Defgen");
     if JS_KEYWORDS.contains(&name) || RESERVED.contains(&name) || internal || runtime {
@@ -160,16 +165,16 @@ fn ident(name: &str) -> String {
 
 /// A field, property or parameter name: `active_profile` becomes
 /// `activeProfile`, the convention JavaScript shares with Kotlin and Swift
-/// (§12).
-fn field_ident(name: &str) -> String {
+/// (§13). `pub` — see [`ident`].
+pub fn field_ident(name: &str) -> String {
     ident(&camel(name))
 }
 
 /// An enum member: `PascalCase`, which is what a frozen object standing in for
 /// an `enum` uses in JavaScript and TypeScript alike — `HearingMode.Cinema`,
 /// not `HearingMode.CINEMA`, which reads as a loose constant rather than as a
-/// member of a set.
-fn member_ident(name: &str) -> String {
+/// member of a set. `pub` — see [`ident`].
+pub fn member_ident(name: &str) -> String {
     let camel = camel(name);
     let mut chars = camel.chars();
     let mut out = String::with_capacity(camel.len());

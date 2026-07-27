@@ -27,9 +27,13 @@ mod json;
 
 use std::alloc::{Layout as AllocLayout, alloc, dealloc};
 
+use defgen::backends::javascript::{field_ident, ident, member_ident};
 use defgen::backends::{self, Options};
 use defgen::diag::{Diagnostic, Severity};
-use defgen::model::{Layout, Model};
+use defgen::model::{
+    Enum, Field, FieldRole, Layout, Model, Scaled, Struct, TypeDef, TypeId, TypeKind, Union, WireType,
+    carrier_bits, int_range,
+};
 use defgen::span::line_col;
 
 use json::{arr, b, n, null, obj, s};
@@ -285,6 +289,11 @@ fn summary(model: &Model) -> String {
             // a type's own is only worth showing where the schema states it.
             ("endianExplicit", b(ty.endian_explicit)),
             ("size", size(ty.layout)),
+            // The Device tab's form generator and value renderer recurse over
+            // this instead of the table above: it is the same information,
+            // shaped for building inputs and reading decoded instances rather
+            // than for a row in a table.
+            ("shape", shape(model, ty)),
         ])
     });
 
@@ -294,6 +303,17 @@ fn summary(model: &Model) -> String {
                 ("name", s(&c.name)),
                 ("uuid", s(&c.uuid)),
                 ("type", s(&model.get(c.ty).name)),
+                // The bound type, as the same `{kind: "named", ...}` shape a
+                // struct field of this type would get — so the Device tab
+                // walks a characteristic's value with the very same recursive
+                // form/decoder it uses for a nested field, root or not.
+                ("valueType", wire_type(model, &WireType::Named(c.ty))),
+                // How to actually invoke that codec at the root: a struct or
+                // union exposes it as instance/class methods, but a root
+                // alias, scaled type or enum has no class at all ([`shape`],
+                // `entry_functions` in backends::javascript) — only the two
+                // free functions this names.
+                ("jsCodec", codec(model, c.ty)),
                 ("endian", s(c.endian.as_str())),
                 ("properties", arr(c.properties.iter().map(|p| s(p.as_str())))),
                 ("size", size(c.layout)),
@@ -321,4 +341,196 @@ fn size(layout: Layout) -> String {
         ("maxBytes", n(layout.max_bytes().min(u128::from(1u64 << 53)))),
         ("variable", b(layout.is_variable())),
     ])
+}
+
+// ---------------------------------------------------------------------------
+// Type shape (Device tab)
+// ---------------------------------------------------------------------------
+//
+// A recursive description of a declared type, for building a form that writes
+// a value and for reading one back off a decoded instance — the two things
+// the summary's flat `{kind, size}` row can't drive. Every generated-code
+// identifier in here (`jsName`/`jsType`) is computed with the same functions
+// `backends::javascript` itself used, so a name the module actually exports
+// is never re-derived, only looked up.
+
+/// A `u128`/`i128` as a JSON string rather than a bare number: both bounds of
+/// a 128-bit field are routinely past `Number.MAX_SAFE_INTEGER`, and the
+/// JavaScript backend itself only starts using `bigint` past 32 bits (see its
+/// module doc) — a plain JSON number here would silently round exactly the
+/// values that matter most for a range check.
+fn big(value: impl std::fmt::Display) -> String {
+    s(&value.to_string())
+}
+
+fn shape(model: &Model, def: &TypeDef) -> String {
+    let name = ident(&def.name);
+    match &def.kind {
+        TypeKind::Alias(a) => obj(&[("form", s("alias")), ("target", wire_type(model, &a.target))]),
+        TypeKind::Scaled(sc) => scaled_shape(sc),
+        TypeKind::Enum(e) => enum_shape(&name, e),
+        TypeKind::Union(u) => union_shape(model, &name, u),
+        TypeKind::Struct(st) => struct_shape(model, st),
+    }
+}
+
+/// A [`WireType`] as `{kind, ...}` — `uint`/`int` (with a range, §2), `bool`,
+/// `named` (a pointer by name into the same `types` array), `array` (fixed
+/// count, §6.1), `vararray` (a bound, §6.3) or `string` (a byte bound, §6.3).
+fn wire_type(model: &Model, ty: &WireType) -> String {
+    match ty {
+        WireType::UInt(bits) => {
+            let (_, max) = int_range(*bits, false);
+            obj(&[
+                ("kind", s("uint")),
+                ("bits", n(*bits)),
+                ("carrierBits", n(carrier_bits(*bits))),
+                ("min", big(0)),
+                ("max", big(max)),
+            ])
+        }
+        WireType::Int(bits) => {
+            let (min, max) = int_range(*bits, true);
+            obj(&[
+                ("kind", s("int")),
+                ("bits", n(*bits)),
+                ("carrierBits", n(carrier_bits(*bits))),
+                ("min", big(min)),
+                ("max", big(max)),
+            ])
+        }
+        WireType::Bool => obj(&[("kind", s("bool"))]),
+        WireType::Named(id) => {
+            let target = model.get(*id);
+            obj(&[("kind", s("named")), ("name", s(&target.name)), ("jsName", s(&ident(&target.name)))])
+        }
+        WireType::Array { elem, count } => {
+            obj(&[("kind", s("array")), ("elem", wire_type(model, elem)), ("count", n(*count))])
+        }
+        WireType::VarArray { elem, max } => {
+            obj(&[("kind", s("vararray")), ("elem", wire_type(model, elem)), ("max", n(*max))])
+        }
+        WireType::Str { max } => obj(&[("kind", s("string")), ("max", n(*max))]),
+    }
+}
+
+/// A visible field (§6.2 drops `padding`, which has no property to set) as
+/// `{name, jsName, reserved, type}`.
+fn field_shape(model: &Model, field: &Field) -> Option<String> {
+    let (name, reserved) = match &field.role {
+        FieldRole::Value { name } => (name, false),
+        FieldRole::Reserved { name } => (name, true),
+        FieldRole::Padding { .. } => return None,
+    };
+    Some(obj(&[
+        ("name", s(name)),
+        ("jsName", s(&field_ident(name))),
+        // Written back unchanged on encode rather than freely settable
+        // (model.rs's `FieldRole::Reserved`) — the form disables it by
+        // default, pre-filled from the last decode rather than left at 0.
+        ("reserved", b(reserved)),
+        ("type", wire_type(model, &field.ty)),
+    ]))
+}
+
+fn fields_shape(model: &Model, fields: &[Field]) -> String {
+    arr(fields.iter().filter_map(|f| field_shape(model, f)))
+}
+
+fn scaled_shape(sc: &Scaled) -> String {
+    let (raw_min, raw_max) = int_range(sc.raw_bits, sc.signed);
+    obj(&[
+        ("form", s("scaled")),
+        ("rawBits", n(sc.raw_bits)),
+        ("signed", b(sc.signed)),
+        ("carrierBits", n(carrier_bits(sc.raw_bits))),
+        ("physical", s(sc.physical.as_str())),
+        ("scale", n(sc.scale)),
+        ("offset", n(sc.offset)),
+        // The *raw* integer's range (§4) — a field of this type holds the
+        // scaled `f32`/`f64` physical value, but validating an edit needs the
+        // pre-conversion bound the same way encode does, and floating-point
+        // scale/offset make deriving it from the physical value lossy.
+        ("rawMin", big(raw_min)),
+        ("rawMax", big(raw_max)),
+    ])
+}
+
+/// `type_js_name` is the enum's own class name — an open enum's synthesized
+/// "unknown" class is `<Enum><Arm>` (§5), the exact concatenation
+/// `backends::javascript::declare_enum` builds, so it is spelled out here
+/// rather than left for the consumer to reassemble.
+fn enum_shape(type_js_name: &str, e: &Enum) -> String {
+    let variants = e.variants.iter().map(|v| {
+        obj(&[("name", s(&v.name)), ("jsName", s(&member_ident(&v.name))), ("value", big(v.value))])
+    });
+    let else_arm = e.else_arm.as_ref().map(|arm| {
+        obj(&[("name", s(&arm.name)), ("jsName", s(&format!("{type_js_name}{}", ident(&arm.name))))])
+    });
+    obj(&[
+        ("form", s("enum")),
+        ("backingBits", n(e.backing_bits)),
+        // Whether a variant's value (and an "other" raw entry) is a `number`
+        // or a `bigint` in the generated module — the same `> 32` carrier
+        // cutoff `backends::javascript::is_big` uses, spelled out here so the
+        // Device tab never has to re-decide it from `backingBits` itself.
+        ("carrierBits", n(carrier_bits(e.backing_bits))),
+        ("variants", arr(variants)),
+        ("elseArm", else_arm.unwrap_or_else(null)),
+    ])
+}
+
+/// `type_js_name` is the union's own class name; each variant's class is
+/// `<Union><Variant>` (§7), again spelled out here rather than reassembled by
+/// the consumer. An open union's "unknown" class carries the tag under the
+/// union's own tag property name, plus `raw` when the payload region is
+/// non-empty — exactly the two arguments `declare_union` passes it.
+fn union_shape(model: &Model, type_js_name: &str, u: &Union) -> String {
+    let variants = u.variants.iter().map(|v| {
+        obj(&[
+            ("name", s(&v.name)),
+            ("jsName", s(&format!("{type_js_name}{}", ident(&v.name)))),
+            ("id", big(v.id)),
+            ("fields", fields_shape(model, &v.fields)),
+        ])
+    });
+    let else_arm = u.else_arm.as_ref().map(|arm| {
+        obj(&[
+            ("name", s(&arm.name)),
+            ("jsName", s(&format!("{type_js_name}{}", ident(&arm.name)))),
+            ("rawBits", n(arm.raw_bits)),
+            ("rawCarrierBits", n(carrier_bits(arm.raw_bits))),
+        ])
+    });
+    obj(&[
+        ("form", s("union")),
+        ("tagName", s(&u.tag_name)),
+        ("tagJsName", s(&field_ident(&u.tag_name))),
+        ("tagBits", n(u.tag_bits)),
+        ("tagCarrierBits", n(carrier_bits(u.tag_bits))),
+        ("variants", arr(variants)),
+        ("elseArm", else_arm.unwrap_or_else(null)),
+    ])
+}
+
+fn struct_shape(model: &Model, st: &Struct) -> String {
+    obj(&[("form", s("struct")), ("fields", fields_shape(model, &st.fields))])
+}
+
+/// How a characteristic's root value is encoded/decoded: `{kind: "class"}`
+/// for a `struct`/tagged `union` (`value.encode()` / `Class.decode(bytes)`),
+/// or `{kind: "functions", encode, decode}` naming the free functions a root
+/// `alias`, `scaled` or `enum` gets instead — mirrors
+/// `backends::javascript::Emitter::has_entry_functions` exactly, since a type
+/// only has one of these two shapes depending on the very same condition.
+fn codec(model: &Model, id: TypeId) -> String {
+    let def = model.get(id);
+    match &def.kind {
+        TypeKind::Struct(_) | TypeKind::Union(_) => obj(&[("kind", s("class"))]),
+        _ => obj(&[
+            ("kind", s("functions")),
+            ("encode", s(&format!("encode{}", member_ident(&def.name)))),
+            ("decode", s(&format!("decode{}", member_ident(&def.name)))),
+        ]),
+    }
 }
