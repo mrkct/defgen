@@ -12,6 +12,7 @@
 
 pub mod c;
 pub mod java;
+pub mod javascript;
 pub mod kotlin;
 pub mod python;
 pub mod swift;
@@ -171,6 +172,7 @@ pub fn all() -> Vec<Box<dyn Backend>> {
     vec![
         Box::new(c::CBackend),
         Box::new(python::PythonBackend),
+        Box::new(javascript::JavaScriptBackend),
         Box::new(java::JavaBackend),
         Box::new(kotlin::KotlinBackend),
         Box::new(swift::SwiftBackend),

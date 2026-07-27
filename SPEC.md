@@ -534,7 +534,7 @@ service HearingAidControl(uuid: "7d8f0000-...") {
   the three hex forms (§10); two characteristics of one service, or two
   services in one file, sharing a UUID.
 
-## 13. Codegen contract (per backend: C, Java, Kotlin, Python, Swift)
+## 13. Codegen contract (per backend: C, Java, JavaScript, Kotlin, Python, Swift)
 
 Each backend must, at minimum:
 
@@ -557,8 +557,8 @@ Each backend must, at minimum:
 - Propagate `///` doc comments to the native doc-comment form.
 - Expose the `version` pragma as a named constant.
 - Represent a `string`/`Type[max: N]` field as the target language's
-  native string/array type where one exists (Java/Kotlin/Swift/Python all
-  have one); reject, at encode time, a value longer than `max`. Validate
+  native string/array type where one exists (Java/JavaScript/Kotlin/Swift/
+  Python all have one); reject, at encode time, a value longer than `max`. Validate
   UTF-8 on `string` decode and fail (exception/`Result`/equivalent) on
   malformed input rather than substituting replacement characters. C has
   no native growable string or array, so the C backend represents a
@@ -570,11 +570,11 @@ per-backend decision and is intentionally not pinned down here.
 
 ## 14. Conformance testing (recommended, not part of the schema)
 
-Because five independently-implemented backends must agree on every bit
+Because six independently-implemented backends must agree on every bit
 of layout, byte order, and unknown-value handling, the recommended
 workflow — once codegen exists — is a set of golden fixtures: hex byte
 strings paired with the expected decoded value (and vice versa for
-encode), generated once from the schema and run against all five
+encode), generated once from the schema and run against all six
 backends in CI. This is what catches a Kotlin/Swift bit-ordering
 disagreement in a test run instead of in the field. This document does
 not specify the fixture format; it's a follow-up once the compiler

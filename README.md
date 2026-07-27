@@ -2,8 +2,8 @@
 
 `defgen` compiles a single `.defs` schema into matching, type-safe codec code
 for reading and writing the fixed-width binary values carried over BLE GATT
-characteristics — C, Python, Kotlin and Swift, all generated from the same
-source of truth.
+characteristics — C, Java, JavaScript, Kotlin, Python and Swift, all
+generated from the same source of truth.
 
 Firmware and its client apps agree on a wire format; they rarely agree on how
 it's implemented. Hand-written encode/decode logic for the same bit-packed
@@ -20,15 +20,17 @@ throughout the spec lives at
 
 ## Supported backends
 
-| Backend  | `--backend` | Output |
-|----------|-------------|--------|
-| C        | `c`         | a single self-contained C99 header |
-| Python   | `python`    | a single self-contained, type-hinted module (Python 3.10+) |
-| Kotlin   | `kotlin`    | a single self-contained Kotlin file (JVM, Kotlin 1.9+) |
-| Swift    | `swift`     | a single self-contained Swift file (Swift 6+) |
+| Backend    | `--backend`  | Output |
+|------------|--------------|--------|
+| C          | `c`          | a single self-contained C99 header |
+| Python     | `python`     | a single self-contained, type-hinted module (Python 3.10+) |
+| JavaScript | `javascript` | a single self-contained, JSDoc-typed ES module (ES2022+) |
+| Java       | `java`       | a single self-contained Java file (Java 17+) |
+| Kotlin     | `kotlin`     | a single self-contained Kotlin file (JVM, Kotlin 1.9+) |
+| Swift      | `swift`      | a single self-contained Swift file (Swift 6+) |
 
 Every backend generates from the same checked model, so bit offsets, enum
-values, byte order and variable-length handling are identical across all four
+values, byte order and variable-length handling are identical across all six
 — see §14 of `SPEC.md` for the cross-backend conformance guarantee.
 
 ## What a schema looks like
@@ -84,7 +86,7 @@ prebuilt binary from the [releases page](https://github.com/mrkct/defgen/release
 ## Usage
 
 ```sh
-defgen <SCHEMA.defs> --backend <c|python|kotlin|swift> [-o <PATH>]
+defgen <SCHEMA.defs> --backend <c|python|javascript|java|kotlin|swift> [-o <PATH>]
 ```
 
 ```sh
@@ -141,9 +143,10 @@ except light.DefgenRangeError as e:
 
 Every generated error type is a subclass of a single `DefgenError`, so one
 `except` clause catches anything the codec can raise. The other backends
-mirror this: exceptions in Kotlin and Swift, and `errno`-style return codes
-in C, all reporting the same categories of failure (range, length, malformed
-UTF-8, non-zero validated padding).
+mirror this: exceptions in Java, JavaScript and Kotlin, a thrown `DefgenError`
+in Swift, and `errno`-style return codes in C, all reporting the same
+categories of failure (range, length, malformed UTF-8, non-zero validated
+padding).
 
 `enum` types with an `else` arm decode unrecognized wire values to a distinct
 "unknown" case that carries the raw value, instead of failing — see §5 and §7
