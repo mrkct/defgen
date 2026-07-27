@@ -16,7 +16,10 @@ checked model, so they can only ever agree with each other.
 **[Try it in the browser](https://mrkct.github.io/defgen/)** — the compiler
 runs as WebAssembly, so you can write a schema and read the generated code
 for all six languages without installing anything, and without a schema
-leaving your machine. See [`web/`](web/) for how it is built.
+leaving your machine. If the schema binds a GATT service, its Device tab can
+also connect to a real BLE peripheral with Web Bluetooth and read/write/notify
+its characteristics live, through that same generated code. See
+[`web/`](web/) for how it is built.
 
 See [`SPEC.md`](SPEC.md) for the full language specification and
 [`GRAMMAR.ebnf`](GRAMMAR.ebnf) for its grammar. The worked example referenced

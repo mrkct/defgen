@@ -28,6 +28,7 @@ it on every pull request.
 | `site/defgen.js` | The JavaScript half of the wasm ABI. |
 | `site/app.js` | The UI — editor, options, result panels. |
 | `site/highlight.js` | A small regex-based syntax highlighter for the schema and the six backends' output. |
+| `site/device.js` | The Device tab — see below. |
 | `build.sh` | Builds the module into `site/`, which is then a complete static site. |
 | `check.mjs` | The wasm-against-CLI conformance check described above. |
 
@@ -73,6 +74,40 @@ is two strings in and one string out, so the whole boundary is about eighty
 lines of Rust and forty of JavaScript, and building the site needs nothing
 beyond a Rust toolchain with the `wasm32-unknown-unknown` target — no CLI to
 install, no generated glue to keep in step with the compiler that produced it.
+
+## The Device tab
+
+When a schema binds at least one `service`/`characteristic`, the playground
+grows a Device tab that talks to a real BLE peripheral with
+[Web Bluetooth](https://developer.mozilla.org/en-US/docs/Web/API/Web_Bluetooth_API)
+— Chrome, Edge or Opera on desktop or Android; not Firefox or Safari, and it
+needs HTTPS (or `localhost`) plus a user gesture, both of which the playground
+already satisfies.
+
+It reads and writes characteristics through the exact javascript backend
+output already on screen — never a second, hand-written codec. `device.js`
+wraps that generated source in a `Blob` and `import()`s it live, and builds
+its per-field forms from `summary.types[].shape`, a recursive description of
+every struct/enum/union/scaled/array/string the wasm boundary now emits
+alongside the table the Schema tab already showed (see `wire_type`/`shape` in
+`wasm/src/lib.rs`) — including the exact class and property names the
+javascript backend gave each one, so the tab never re-derives JavaScript's own
+naming rules and can't drift from what the generated module actually exports.
+
+On connect, it discovers the device's actual services/characteristics and
+matches them against the schema by UUID: a match gets the full form (schema
+fields or raw hex, your choice, for both reading and writing); a
+characteristic the device has that the schema doesn't declare shows up as an
+unmatched, hex-only row instead of being hidden. Web Bluetooth itself limits
+this to services the schema declares — see the module doc at the top of
+`device.js` for why a wholly *unknown* service can never turn up here, only an
+unknown characteristic on a known one.
+
+Web Bluetooth has no explicit "pair" call — pairing, where a device demands
+it, happens at the OS level the moment an operation needs it. The tab's
+**Pair** button is a best-effort nudge (a read, to trigger that moment on
+purpose) and reports whether it went through, rather than pretending to
+control something the API doesn't expose.
 
 ## Deployment
 

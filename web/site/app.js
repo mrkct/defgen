@@ -5,6 +5,7 @@
 import { loadDefgen } from "./defgen.js";
 import { EXAMPLES, loadExample } from "./examples.js";
 import { highlight, languageForFile } from "./highlight.js";
+import * as device from "./device.js";
 
 const dom = Object.fromEntries(
   [
@@ -23,6 +24,7 @@ const dom = Object.fromEntries(
     "source",
     "tabs",
     "result",
+    "device",
     "code-actions",
     "file-picker",
     "files",
@@ -41,9 +43,17 @@ const TABS = [
   { id: "code", label: "Code" },
   { id: "problems", label: "Problems" },
   { id: "schema", label: "Schema" },
+  // Sticks around once a schema has bound at least one characteristic, even
+  // if the schema is mid-edit and currently has errors — hiding it the
+  // moment a keystroke breaks parsing would drop a connected device off the
+  // tab bar under the user's hands.
+  { id: "device", label: "Device", shown: () => deviceAvailable },
   { id: "ast", label: "Syntax tree", shown: () => dom.optAst.checked },
   { id: "model", label: "Model", shown: () => dom.optModel.checked },
 ];
+
+/** Whether the schema last compiled cleanly has bound GATT characteristics. */
+let deviceAvailable = false;
 
 /** The compiler, once it has arrived. */
 let defgen = null;
@@ -247,6 +257,11 @@ function compile() {
   }
   dom.timing.textContent = `generated in ${(performance.now() - started).toFixed(1)} ms`;
 
+  if (result.ok) {
+    deviceAvailable = result.summary.services.length > 0;
+    updateDevice(result);
+  }
+
   activeFile = 0;
   if (result.diagnostics.some((d) => d.severity === "error")) {
     activeTab = "problems";
@@ -254,6 +269,22 @@ function compile() {
     activeTab = "code";
   }
   render();
+}
+
+/**
+ * Hands the Device tab a live, importable copy of the schema.
+ *
+ * The Device tab needs the *javascript* backend's output specifically, to
+ * `import()` its codecs — regardless of which backend is selected in the
+ * toolbar for the Code tab. Reuses the result already in hand when
+ * javascript is what's selected; otherwise asks the (already-loaded, so
+ * this is cheap) compiler for it again.
+ */
+function updateDevice(result) {
+  const { backend, stem } = options();
+  const js = backend === "javascript" ? result : defgen.compile(dom.source.value, { backend: "javascript", stem });
+  const jsSource = js.files[0]?.contents;
+  if (jsSource) device.setSchema({ summary: result.summary, jsSource });
 }
 
 // ---------------------------------------------------------------- rendering
@@ -298,6 +329,16 @@ function renderPanel() {
       ...files.map((file, i) => el("option", { value: String(i), text: file.name })),
     );
     dom.files.value = String(activeFile);
+  }
+
+  // The Device tab owns a persistent DOM subtree of its own — an open
+  // connection, a subscribed notification, a form mid-edit — so it is shown
+  // or hidden rather than rebuilt into `dom.result` like every other tab.
+  dom.device.hidden = activeTab !== "device";
+  dom.result.hidden = activeTab === "device";
+  if (activeTab === "device") {
+    device.render();
+    return;
   }
 
   if (!result) {
@@ -618,6 +659,7 @@ function wire() {
 async function start() {
   wire();
   fillExamples();
+  device.mount(dom.device);
   dom.generate.disabled = true;
 
   const saved = restore();
