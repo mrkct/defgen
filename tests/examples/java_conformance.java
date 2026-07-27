@@ -444,7 +444,6 @@ public class Conformance {
     // -----------------------------------------------------------------------
 
     static void testMetadata() {
-        check(Commands.SCHEMA_VERSION == 2L, "SCHEMA_VERSION");
         check(
                 Commands.HEARING_AID_CONTROL_UUID.equals("7d8f0000-3c1a-4e8a-9b5a-000000000000"),
                 "service UUID");

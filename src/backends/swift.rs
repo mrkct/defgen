@@ -50,7 +50,7 @@
 //!   plus `<name>FromRaw`/`<name>ToRaw` functions that keep the underlying
 //!   wire integer reachable for callers that want to round-trip without
 //!   floating-point rounding.
-//! * A variable-length field (§6.3) is a native `String` or `Array`, as §13
+//! * A variable-length field (§6.3) is a native `String` or `Array`, as §12
 //!   asks. Decode fails on malformed UTF-8 rather than substituting
 //!   replacement characters.
 //! * Failures are one `DefgenError` enum with a case per kind, so a caller
@@ -141,7 +141,7 @@ fn ident(name: &str) -> String {
 }
 
 /// A field, case or parameter name as the Swift identifier it becomes:
-/// `camel`-cased (§13 — Swift shares this convention with Kotlin and Java),
+/// `camel`-cased (§12 — Swift shares this convention with Kotlin and Java),
 /// then escaped the same way a type name is.
 fn field_ident(name: &str) -> String {
     ident(&camel(name))
@@ -282,7 +282,7 @@ impl<'m> Emitter<'m> {
         self.blank();
     }
 
-    /// Doc comments as `///` (§1, §13). No escaping is needed the way a
+    /// Doc comments as `///` (§1, §12). No escaping is needed the way a
     /// block comment (KDoc, Doxygen) requires: a `///` line has no closing
     /// sequence another line's text could prematurely trigger.
     fn docs(&mut self, ind: usize, docs: &Docs) {
@@ -540,10 +540,6 @@ impl<'m> Emitter<'m> {
                 "//",
             ],
         );
-        self.blank();
-        let version = self.m.version;
-        self.note(0, "The schema's `version` pragma (SPEC.md §11).");
-        self.line(0, &format!("let SCHEMA_VERSION: UInt64 = {version}"));
     }
 
     // ---------------------------------------------------------------------
@@ -555,7 +551,7 @@ impl<'m> Emitter<'m> {
         self.lines(
             0,
             &[
-                "/// Every failure a generated codec can throw (§13): one type, so a caller can",
+                "/// Every failure a generated codec can throw (§12): one type, so a caller can",
                 "/// catch every kind with a single `catch`.",
                 "enum DefgenError: Error, CustomStringConvertible {",
             ],
@@ -778,7 +774,7 @@ impl<'m> Emitter<'m> {
                 0,
                 &[
                     "/// Rounds half away from zero, which is what every other backend's",
-                    "/// `scaled` rounding does too (§4, §14) — Swift's own `.rounded()` supports",
+                    "/// `scaled` rounding does too (§4, §13) — Swift's own `.rounded()` supports",
                     "/// this rule directly, as `.toNearestOrAwayFromZero`.",
                     "private func defgenRound(_ value: Double, _ label: String) throws -> Double {",
                     "    guard value.isFinite else {",
@@ -1526,7 +1522,7 @@ impl<'m> Emitter<'m> {
     }
 
     // ---------------------------------------------------------------------
-    // Entry points (§13)
+    // Entry points (§12)
     // ---------------------------------------------------------------------
 
     /// The module-level codec an `alias`, `scaled` or `enum` bound to a

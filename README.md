@@ -36,13 +36,11 @@ throughout the spec lives at
 
 Every backend generates from the same checked model, so bit offsets, enum
 values, byte order and variable-length handling are identical across all six
-— see §14 of `SPEC.md` for the cross-backend conformance guarantee.
+— see §13 of `SPEC.md` for the cross-backend conformance guarantee.
 
 ## What a schema looks like
 
 ```defs
-version = 1;
-
 endian: little;
 
 ---
@@ -70,7 +68,7 @@ service Light(uuid: "0000ffe0-0000-1000-8000-00805f9b34fb") {
 }
 ```
 
-A `version`/`endian` header, then type declarations (aliases, enums, structs,
+An optional `endian` header, then type declarations (aliases, enums, structs,
 scaled values) and `service`/`characteristic` bindings — everything needed to
 derive an exact bit layout at compile time.
 

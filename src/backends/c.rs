@@ -14,7 +14,7 @@
 //! # Naming
 //!
 //! The schema owns the header's namespace, so declared names carry over
-//! directly and are only re-cased to C convention (§13):
+//! directly and are only re-cased to C convention (§12):
 //!
 //! | Schema | C |
 //! |---|---|
@@ -47,7 +47,7 @@
 //!   unrecognized id left in the discriminant field.
 //! * C has no growable string or array, so a variable-length field (§6.3) is a
 //!   fixed-capacity buffer of `max` elements plus a `<field>_len` count, as
-//!   §13 requires. Nothing here allocates. An `alias` of a variable-length
+//!   §12 requires. Nothing here allocates. An `alias` of a variable-length
 //!   type gets that pair wrapped in a value of its own (`{ data, len }`), since
 //!   §6.3 lets such an alias be bound straight to a characteristic and it then
 //!   needs to be one addressable thing.
@@ -275,7 +275,7 @@ impl<'m> Emitter<'m> {
         self.blank();
     }
 
-    /// Doc comments as Doxygen (§1, §13).
+    /// Doc comments as Doxygen (§1, §12).
     fn docs(&mut self, ind: usize, docs: &Docs) {
         if docs.is_empty() {
             return;
@@ -412,7 +412,7 @@ impl<'m> Emitter<'m> {
     }
 
     /// The declaration lines for one struct member. An inline variable-length
-    /// field becomes a fixed-capacity buffer plus an explicit length (§13).
+    /// field becomes a fixed-capacity buffer plus an explicit length (§12).
     fn member_lines(&self, ty: &WireType, name: &str) -> Vec<String> {
         match ty {
             WireType::Array { elem, count } => {
@@ -542,11 +542,6 @@ impl<'m> Emitter<'m> {
     }
 
     fn prelude(&mut self) {
-        let version = self.m.version;
-        self.banner("Schema version");
-        self.note(0, "The schema's `version` pragma (SPEC.md §11).");
-        self.line(0, &format!("#define DEFGEN_SCHEMA_VERSION {version}"));
-
         self.banner("Runtime");
 
         if self.needs.wide {
@@ -702,7 +697,7 @@ impl<'m> Emitter<'m> {
                     "/* Rounds half away from zero: exactly what C's `round()` does, without",
                     "   pulling in <math.h> and libm for the one operation a `scaled` type needs",
                     "   (§4). Every backend has to agree on a scaled value's raw integer down to",
-                    "   the last unit (§14), so this is `round()`'s behaviour and not merely a",
+                    "   the last unit (§13), so this is `round()`'s behaviour and not merely a",
                     "   near-miss.",
                     "",
                     "   The obvious `(int64_t)(v + 0.5)` is *not* that: adding 0.5 to the double",
@@ -1677,7 +1672,7 @@ impl<'m> Emitter<'m> {
 
     // -- public entry points ------------------------------------------------
 
-    /// The encode/decode pair a characteristic-bound type gets (§13). This is
+    /// The encode/decode pair a characteristic-bound type gets (§12). This is
     /// the only place byte order becomes a concrete value: everything below
     /// takes it as a parameter.
     fn entry_points(&mut self, def: &'m TypeDef) {

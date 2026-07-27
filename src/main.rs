@@ -137,7 +137,7 @@ fn give_up(filename: &str, diagnostics: &[defgen::Diagnostic]) -> ExitCode {
 
 fn summarize(filename: &str, model: &Model, generated: &Generated) {
     println!("{filename}: OK");
-    println!("  version {}, {}-endian", model.version, model.endian.as_str());
+    println!("  {}-endian", model.endian.as_str());
 
     for ty in &model.types {
         let mut line = format!("  {} {}: {}", ty.kind_str(), ty.name, describe(ty.layout));

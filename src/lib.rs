@@ -8,7 +8,7 @@
 //! 2. [`parser::parse`] — tokens to an [`ast::Schema`], reporting every syntax
 //!    error it can as a [`diag::Diagnostic`].
 //! 3. [`check::check`] — an [`ast::Schema`] to a [`model::Model`], enforcing
-//!    every cross-node rule in SPEC.md §12 (exact-fit widths, name resolution,
+//!    every cross-node rule in SPEC.md §11 (exact-fit widths, name resolution,
 //!    variable-length placement, duplicate ids) and resolving layouts.
 //!
 //! [`compile`] runs all three. Code generation is the fourth: a

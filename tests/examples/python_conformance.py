@@ -446,7 +446,6 @@ def test_owner_name() -> None:
 
 
 def test_metadata() -> None:
-    check(m.SCHEMA_VERSION == 2, "SCHEMA_VERSION")
     check(
         m.HEARING_AID_CONTROL_UUID == "7d8f0000-3c1a-4e8a-9b5a-000000000000",
         "service UUID",

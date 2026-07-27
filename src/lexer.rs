@@ -8,7 +8,7 @@ use std::fmt;
 use crate::diag::Diagnostic;
 use crate::span::Span;
 
-/// Reserved words. Everything else that reads like a keyword (`version`,
+/// Reserved words. Everything else that reads like a keyword (`endian`,
 /// `little`, `max`, `uuid`, `read`, `f32`, `bool`, ...) is lexed as an
 /// identifier and recognized by position, so schemas stay free to use those
 /// words as field or type names. See GRAMMAR.ebnf.

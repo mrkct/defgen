@@ -17,8 +17,7 @@ fn example() -> Schema {
 #[test]
 fn header_pragmas() {
     let schema = example();
-    assert_eq!(schema.version.value, 2);
-    assert_eq!(schema.endian.value, Endianness::Little);
+    assert_eq!(schema.endian.map(|e| e.value), Some(Endianness::Little));
     assert!(schema.separator.is_some());
 }
 
@@ -285,5 +284,5 @@ fn spans_point_at_the_written_source() {
     assert_eq!(status.name.span.text(EXAMPLE), "Status");
     assert_eq!(status.width_bits.unwrap().span.text(EXAMPLE), "u64");
     let (line, col) = defgen::span::line_col(EXAMPLE, status.name.span.start);
-    assert_eq!((line, col), (57, 8));
+    assert_eq!((line, col), (52, 8));
 }

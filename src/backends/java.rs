@@ -66,7 +66,7 @@
 //!   record per declared id, and — for an open union — an `Unknown` carrying
 //!   the unrecognized id together with the undecoded raw payload.
 //! * A fixed or variable-length array (§6.1, §6.3) is an immutable `List` of
-//!   the boxed element type, and a `string` is a `String`, as §13 asks. Decode
+//!   the boxed element type, and a `string` is a `String`, as §12 asks. Decode
 //!   fails on malformed UTF-8 rather than substituting replacement characters.
 //! * Failures are **checked** exceptions under a common sealed `DefgenError`:
 //!   malformed wire data is exactly the recoverable, caller's-problem condition
@@ -153,7 +153,7 @@ const RESERVED: &[&str] = &[
     "bits", "off", "data", "value", "big", "prefix", "tail", "out", "elems", "count", "checked",
     "physical", "magnitude", "i",
     "DefgenBits", "DefgenError", "GattProperty", "GattService", "GattCharacteristic",
-    "SCHEMA_VERSION", "SERVICES",
+    "SERVICES",
 ];
 
 /// The schema's file stem as the one public class everything nests inside:
@@ -478,7 +478,7 @@ impl<'m> Emitter<'m> {
         self.ident(&camel(name))
     }
 
-    /// Doc comments as Javadoc (§1, §13).
+    /// Doc comments as Javadoc (§1, §12).
     fn docs(&mut self, ind: usize, docs: &Docs) {
         self.docs_with(ind, docs, &[]);
     }
@@ -686,7 +686,7 @@ impl<'m> Emitter<'m> {
                             int_lit(0, e.backing_bits, false)
                         ),
                         // An enum with neither variants nor an `else` arm is
-                        // rejected by §12; a mutated schema can still reach
+                        // rejected by §11; a mutated schema can still reach
                         // codegen with one, and it has no value to name.
                         (None, None) => "null".to_string(),
                     },
@@ -807,17 +807,6 @@ impl<'m> Emitter<'m> {
         self.note(1, "A namespace, not a value: there is nothing here to construct.");
         self.line(1, &format!("private {outer}() {{"));
         self.line(1, "}");
-        self.blank();
-
-        let version = self.m.version;
-        self.note(1, "The schema's `version` pragma (SPEC.md §11).");
-        let literal = match i64::try_from(version) {
-            Ok(v) => format!("{v}L"),
-            // Past `Long.MAX_VALUE` there is no literal to write, but the exact
-            // value still round-trips through the unsigned parser.
-            Err(_) => format!("Long.parseUnsignedLong(\"{version}\")"),
-        };
-        self.line(1, &format!("public static final long SCHEMA_VERSION = {literal};"));
     }
 
     // ---------------------------------------------------------------------
@@ -1049,7 +1038,7 @@ impl<'m> Emitter<'m> {
                 &[
                     "/**",
                     " * Rounds half away from zero, which is what C's round() does. Every backend has",
-                    " * to agree on a `scaled` value's raw integer down to the last unit (§4, §14):",
+                    " * to agree on a `scaled` value's raw integer down to the last unit (§4, §13):",
                     " * Java has no built-in \"round half away from zero\", and the obvious Math.round",
                     " * rounds half *up*, which disagrees on every negative tie.",
                     " */",
@@ -1221,7 +1210,7 @@ impl<'m> Emitter<'m> {
         ];
         self.docs_with(1, &def.docs, &notes);
         self.line(1, &format!("public enum {name} {{"));
-        // §12 rejects an enum with no variants, but a mutated schema can still
+        // §11 rejects an enum with no variants, but a mutated schema can still
         // reach codegen with one, and `;` alone is how Java spells an empty
         // constant list ahead of a body.
         if e.variants.is_empty() {
@@ -1814,7 +1803,7 @@ impl<'m> Emitter<'m> {
     }
 
     // ---------------------------------------------------------------------
-    // Entry points (§13)
+    // Entry points (§12)
     // ---------------------------------------------------------------------
 
     /// The static codec an `alias`, `scaled` or `enum` bound to a

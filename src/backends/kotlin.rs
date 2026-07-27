@@ -56,7 +56,7 @@
 //!   plus `<name>FromRaw`/`<name>ToRaw` functions that keep the underlying
 //!   wire integer reachable for callers that want to round-trip without
 //!   floating-point rounding.
-//! * A variable-length field (§6.3) is a native `String` or `List`, as §13
+//! * A variable-length field (§6.3) is a native `String` or `List`, as §12
 //!   asks. Decode fails on malformed UTF-8 rather than substituting
 //!   replacement characters.
 //! * Failures are exceptions, one class per kind under a common sealed
@@ -371,7 +371,7 @@ impl<'m> Emitter<'m> {
         self.blank();
     }
 
-    /// Doc comments as KDoc (§1, §13).
+    /// Doc comments as KDoc (§1, §12).
     fn docs(&mut self, ind: usize, docs: &Docs) {
         if docs.is_empty() {
             return;
@@ -633,10 +633,6 @@ impl<'m> Emitter<'m> {
         if self.needs.round {
             self.line(0, "import java.math.BigDecimal");
         }
-        self.blank();
-        let version = self.m.version;
-        self.note(0, "The schema's `version` pragma (SPEC.md §11).");
-        self.line(0, &format!("const val SCHEMA_VERSION: ULong = {version}uL"));
     }
 
     // ---------------------------------------------------------------------
@@ -793,7 +789,7 @@ impl<'m> Emitter<'m> {
                     "/**",
                     " * Rounds half away from zero, which is what C's `round()` does. Every backend",
                     " * has to agree on a `scaled` value's raw integer down to the last unit (§4,",
-                    " * §14): Kotlin has no built-in \"round half away from zero\", and the obvious",
+                    " * §13): Kotlin has no built-in \"round half away from zero\", and the obvious",
                     " * `Math.round` rounds half *up*, which disagrees on every negative tie.",
                     " */",
                     "private fun defgenRound(value: Double, where_: String): BigInteger {",
@@ -1516,7 +1512,7 @@ impl<'m> Emitter<'m> {
     }
 
     // ---------------------------------------------------------------------
-    // Entry points (§13)
+    // Entry points (§12)
     // ---------------------------------------------------------------------
 
     /// The module-level codec an `alias`, `scaled` or `enum` bound to a

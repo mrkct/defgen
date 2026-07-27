@@ -62,7 +62,7 @@
 //!   `<Name><Else>` carrying the unrecognized id together with the undecoded
 //!   payload. The base refuses to be constructed directly, so every value is
 //!   one of the variants, and decoding dispatches on the id.
-//! * A variable-length field (§6.3) is a native `string` or `Array`, as §13
+//! * A variable-length field (§6.3) is a native `string` or `Array`, as §12
 //!   asks. A `string` is encoded and decoded strictly: `TextDecoder` is
 //!   constructed with `fatal: true` so malformed input fails rather than
 //!   becoming replacement characters, and encode rejects a lone surrogate for
@@ -160,7 +160,7 @@ fn ident(name: &str) -> String {
 
 /// A field, property or parameter name: `active_profile` becomes
 /// `activeProfile`, the convention JavaScript shares with Kotlin and Swift
-/// (§13).
+/// (§12).
 fn field_ident(name: &str) -> String {
     ident(&camel(name))
 }
@@ -197,7 +197,7 @@ fn escape_doc(text: &str) -> String {
     text.replace("*/", "*\\/")
 }
 
-/// The lines of a `///` comment (§1, §13).
+/// The lines of a `///` comment (§1, §12).
 fn doc_lines(docs: &Docs) -> Vec<String> {
     docs.iter().map(|d| d.text.clone()).collect()
 }
@@ -533,7 +533,7 @@ impl<'m> Emitter<'m> {
                 match &def.kind {
                     TypeKind::Alias(a) => self.fresh(&a.target),
                     TypeKind::Scaled(_) => "0".to_string(),
-                    // An enum with no variants at all is a compile error (§12),
+                    // An enum with no variants at all is a compile error (§11),
                     // so the fallback only stands in for an `else`-only one.
                     TypeKind::Enum(e) => match (e.variants.first(), &e.else_arm) {
                         (Some(v), _) => format!("{name}.{}", member_ident(&v.name)),
@@ -620,11 +620,6 @@ impl<'m> Emitter<'m> {
                 "// the type declarations — `tsc --checkJs` reads them, and so does an editor.",
             ],
         );
-        self.blank();
-
-        let version = self.m.version;
-        self.note(0, "The schema's `version` pragma (SPEC.md §11).");
-        self.line(0, &format!("export const SCHEMA_VERSION = {version};"));
     }
 
     // ---------------------------------------------------------------------
@@ -949,7 +944,7 @@ impl<'m> Emitter<'m> {
                     " * Rounds half away from zero, which is what C's `round()` does.",
                     " *",
                     " * The backends have to agree on a `scaled` value's raw integer down to the",
-                    " * last unit (§4, §14), and `Math.round` rounds half *up* — -0.5 to 0, not to",
+                    " * last unit (§4, §13), and `Math.round` rounds half *up* — -0.5 to 0, not to",
                     " * -1 — so it would disagree below zero. The C backend carries the mirror",
                     " * image of this function rather than calling `round()` from libm.",
                     " *",
@@ -1136,7 +1131,7 @@ impl<'m> Emitter<'m> {
         self.line(0, "});");
         self.blank();
 
-        // -- the fallback variant, and the type covering both cases (§5, §13) --
+        // -- the fallback variant, and the type covering both cases (§5, §12) --
         if let Some(arm) = &e.else_arm {
             let unknown = format!("{name}{}", ident(&arm.name));
             let raw_ty = if is_big(arm.raw_bits) { "bigint" } else { "number" };
@@ -1720,7 +1715,7 @@ impl<'m> Emitter<'m> {
     }
 
     // ---------------------------------------------------------------------
-    // Entry points (§13)
+    // Entry points (§12)
     // ---------------------------------------------------------------------
 
     fn encode_method(&mut self, schema_name: &str, size: u64, big: bool, max: Option<u128>) {

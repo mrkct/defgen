@@ -425,7 +425,6 @@ static void test_owner_name(void) {
 /* ------------------------------------------------------------------------ */
 
 static void test_metadata(void) {
-    CHECK(DEFGEN_SCHEMA_VERSION == 2);
     CHECK(strcmp(HEARING_AID_CONTROL_SERVICE_UUID,
                  "7d8f0000-3c1a-4e8a-9b5a-000000000000") == 0);
     CHECK(strcmp(HEARING_AID_CONTROL_STATUS_CHAR_UUID,

@@ -13,7 +13,7 @@
 //!   without inventing cascading ones.
 //!
 //! Only syntax and single-literal validity are checked here. Cross-node rules
-//! (SPEC.md §12) belong to the semantic pass; see `ast` for the split.
+//! (SPEC.md §11) belong to the semantic pass; see `ast` for the split.
 
 use crate::ast::*;
 use crate::diag::{Diagnostic, Severity, suggest};
@@ -45,7 +45,7 @@ pub fn parse(src: &str) -> Parsed {
     let mut p = Parser { src, tokens, pos: 0, diagnostics: Vec::new(), ctx: Vec::new() };
     let schema = p.parse_file();
     let has_errors = p.diagnostics.iter().any(|d| d.severity == Severity::Error);
-    Parsed { schema: if has_errors { None } else { schema }, diagnostics: p.diagnostics }
+    Parsed { schema: if has_errors { None } else { Some(schema) }, diagnostics: p.diagnostics }
 }
 
 /// Signals "a diagnostic was already recorded; unwind to the nearest recovery
@@ -446,47 +446,36 @@ impl<'a> Parser<'a> {
 // ---------------------------------------------------------------------------
 
 struct Header {
-    version: Option<Spanned<u64>>,
     endian: Option<Spanned<Endianness>>,
     separator: Option<Span>,
 }
 
 impl<'a> Parser<'a> {
-    fn parse_file(&mut self) -> Option<Schema> {
+    fn parse_file(&mut self) -> Schema {
         let header = self.parse_header();
         let decls = self.parse_decls();
+        Schema { endian: header.endian, separator: header.separator, decls }
+    }
 
-        // Report a missing pragma at the separator, which is where the header
-        // the author *did* write ends; with no separator at all, point at the
-        // top of the file, where the header should have been.
-        let (anchor, anchor_label) = match header.separator {
-            Some(span) => (span, "the file header ends here"),
-            None => (Span::new(0, 0), "the file header belongs here"),
-        };
-        if header.version.is_none() {
-            let d = Diagnostic::error("missing required `version` pragma")
-                .primary(anchor, anchor_label)
-                .note(
-                    "every schema must declare `version` exactly once, in the header above `---` (§1.1, §11)",
-                )
-                .help("add `version = 1;` at the top of the file");
-            self.emit(d);
+    /// True if the upcoming tokens open a file header (§1.1) — an `endian`
+    /// pragma and/or a bare `---` — rather than declarations starting right
+    /// away. The header is entirely optional: a file with neither just
+    /// starts with its declarations, and the default byte order (little)
+    /// applies (§8).
+    fn looks_like_header(&self) -> bool {
+        let mut i = self.pos;
+        while matches!(self.tokens[i].kind, TokKind::Doc(_)) {
+            i += 1;
         }
-        if header.endian.is_none() {
-            let d = Diagnostic::error("missing required `endian` pragma")
-                .primary(anchor, anchor_label)
-                .note(
-                    "byte order has no default: it must be stated once, in the header above `---` (§1.1, §8)",
-                )
-                .help("add `endian: little;` (or `endian: big;`) at the top of the file");
-            self.emit(d);
-        }
-
-        Some(Schema { version: header.version?, endian: header.endian?, separator: header.separator, decls })
+        matches!(&self.tokens[i].kind, TokKind::Ident(name) if name == "endian")
+            || matches!(self.tokens[i].kind, TokKind::Punct(Punct::Separator))
     }
 
     fn parse_header(&mut self) -> Header {
-        let mut header = Header { version: None, endian: None, separator: None };
+        let mut header = Header { endian: None, separator: None };
+        if !self.looks_like_header() {
+            return header;
+        }
         loop {
             match self.peek().clone() {
                 // `//` comments are trivia; a `///` here documents nothing.
@@ -504,15 +493,11 @@ impl<'a> Parser<'a> {
                 TokKind::Eof => {
                     let d = Diagnostic::error("missing `---` separator")
                         .primary(self.span(), "expected `---` before the end of the file")
-                        .note("a `.defs` file is a header (`version`, `endian`) then `---` then declarations (§1.1)")
-                        .help("add a line containing only `---` after the header pragmas");
+                        .note("a file header (an `endian` pragma) is optional, but if present must be followed by `---` then declarations (§1.1)")
+                        .help("add a line containing only `---` after the header");
                     self.emit(d);
                     return header;
                 }
-                TokKind::Ident(name) if name == "version" => match self.parse_version_pragma() {
-                    Ok(v) => self.set_once(&mut header.version, v, "version"),
-                    Err(Bail) => self.sync_in_header(),
-                },
                 TokKind::Ident(name) if name == "endian" => match self.parse_endian_pragma() {
                     Ok(v) => self.set_once(&mut header.endian, v, "endian"),
                     Err(Bail) => self.sync_in_header(),
@@ -523,13 +508,13 @@ impl<'a> Parser<'a> {
                     let span = self.span();
                     let d = Diagnostic::error("declaration appears above the `---` separator")
                         .primary(span, "declarations belong below `---`")
-                        .note("only the `version` and `endian` pragmas may appear in the file header (§1.1)")
+                        .note("only the `endian` pragma may appear in the file header (§1.1)")
                         .help("add a line containing only `---` between the header and the declarations");
                     self.emit(d);
                     return header;
                 }
                 _ => {
-                    let _ = self.expected_one_of(&["`version`", "`endian`", "`---`"]);
+                    let _ = self.expected_one_of(&["`endian`", "`---`"]);
                     self.sync_in_header();
                     if self.at_eof() {
                         return header;
@@ -567,28 +552,6 @@ impl<'a> Parser<'a> {
             }
             None => *slot = Some(value),
         }
-    }
-
-    fn parse_version_pragma(&mut self) -> PResult<Spanned<u64>> {
-        let kw_span = self.bump().span; // `version`
-        if self.at_punct(Punct::Colon) {
-            let span = self.span();
-            let d = self
-                .diag(span, "the `version` pragma is written with `=`, not `:`", "expected `=`")
-                .help("write `version = 1;`");
-            return Err(self.emit(d));
-        }
-        self.expect(Punct::Eq, "`version`")?;
-        let value = self.expect_int("a schema version")?;
-        let span = kw_span.to(value.span);
-        let number = u64::try_from(value.value).map_err(|_| {
-            let d = self
-                .diag(value.span, "schema version is too large", "does not fit in 64 bits")
-                .help("schema versions are small counting numbers, e.g. `version = 2;`");
-            self.emit(d)
-        })?;
-        self.expect(Punct::Semi, "the `version` pragma")?;
-        Ok(Spanned::new(number, span))
     }
 
     fn parse_endian_pragma(&mut self) -> PResult<Spanned<Endianness>> {
@@ -698,13 +661,13 @@ impl<'a> Parser<'a> {
                 self.reject_attrs(&attrs, "a `service`");
                 Ok(Some(Decl::Service(self.parse_service(docs)?)))
             }
-            // Pragmas below the separator.
-            TokKind::Ident(name) if name == "version" || name == "endian" => {
+            // Pragma below the separator.
+            TokKind::Ident(name) if name == "endian" => {
                 let span = self.span();
-                let d = Diagnostic::error(format!("the `{name}` pragma must appear in the file header"))
+                let d = Diagnostic::error("the `endian` pragma must appear in the file header".to_string())
                     .primary(span, "found below the `---` separator")
-                    .note("`version` and `endian` are file-wide settings and live above `---` (§1.1)")
-                    .help(format!("move this `{name}` line above the `---`"));
+                    .note("`endian` is a file-wide setting and lives above `---` (§1.1)")
+                    .help("move this `endian` line above the `---`");
                 Err(self.emit(d))
             }
             TokKind::Kw(Kw::Characteristic) => {
@@ -1116,7 +1079,7 @@ impl<'a> Parser<'a> {
                 format!("expected an array length, found `{word}`"),
                 "array lengths are literal integers",
             )
-            .note("an array is either fixed (`Type[4]`) or variable-length (`Type[max: 4]`); there is no length-from-another-field form (§6.1, §15)");
+            .note("an array is either fixed (`Type[4]`) or variable-length (`Type[max: 4]`); there is no length-from-another-field form (§6.1, §14)");
             if let Some(s) = suggest(&word, &["max"]) {
                 d = d.help(format!("did you mean `{s}: N`?"));
             }
@@ -1163,13 +1126,13 @@ impl<'a> Parser<'a> {
         Ok(bound)
     }
 
-    /// A `max:` bound: a positive integer that fits in 64 bits (§12).
+    /// A `max:` bound: a positive integer that fits in 64 bits (§11).
     fn parse_positive_bound(&mut self, what: &str) -> PResult<Spanned<u64>> {
         let value = self.expect_int(&format!("a `{what}` bound"))?;
         if value.value == 0 {
             let d = self
                 .diag(value.span, format!("`{what}` must be a positive integer"), "zero is not allowed")
-                .note("a variable-length field with a maximum of zero could never hold anything (§12)");
+                .note("a variable-length field with a maximum of zero could never hold anything (§11)");
             return Err(self.emit(d));
         }
         u64::try_from(value.value).map(|v| Spanned::new(v, value.span)).map_err(|_| {
@@ -1554,7 +1517,7 @@ impl<'a> Parser<'a> {
             let span = attrs.first().map_or(start, |a| a.span);
             let d = Diagnostic::error("attributes cannot be applied to a field")
                 .primary(span, "not allowed here")
-                .note("byte order is a property of a whole root container, never of one field; there is no per-field byte-swap override (§8, §15)");
+                .note("byte order is a property of a whole root container, never of one field; there is no per-field byte-swap override (§8, §14)");
             self.emit(d);
         }
 
@@ -1870,7 +1833,7 @@ impl<'a> Parser<'a> {
                         format!("unknown characteristic argument `{other}`"),
                         "expected `uuid` or `properties`",
                     )
-                    .note("v1 has no descriptors, permissions or security metadata in the schema (§15)");
+                    .note("v1 has no descriptors, permissions or security metadata in the schema (§14)");
                 if let Some(s) = suggest(other, &["uuid", "properties"]) {
                     d = d.help(format!("did you mean `{s}`?"));
                 }

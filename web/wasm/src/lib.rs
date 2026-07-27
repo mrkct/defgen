@@ -268,8 +268,8 @@ fn diagnostic(d: &Diagnostic, src: &str, filename: &str) -> String {
 // Schema summary
 // ---------------------------------------------------------------------------
 
-/// What the CLI prints after writing a file: the resolved version and byte
-/// order, every declared type with its size, and the GATT bindings.
+/// What the CLI prints after writing a file: the resolved byte order, every
+/// declared type with its size, and the GATT bindings.
 ///
 /// Sizes come across as numbers rather than as the CLI's phrasing, because the
 /// page lays them out as table cells rather than as a line of text.
@@ -307,7 +307,6 @@ fn summary(model: &Model) -> String {
     });
 
     obj(&[
-        ("version", n(model.version)),
         ("endian", s(model.endian.as_str())),
         ("types", arr(types)),
         ("services", arr(services)),
