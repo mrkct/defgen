@@ -42,4 +42,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # The Java backend's conformance test compiles and runs its generated
+      # file, and generated code needs records and sealed interfaces (Java 17).
+      # Pinning the JDK is what stops a runner image's default version from
+      # deciding whether that test runs, or fails.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
       - run: cargo test --all-features --workspace
