@@ -4,6 +4,7 @@
 
 import { loadDefgen } from "./defgen.js";
 import { EXAMPLES, loadExample } from "./examples.js";
+import { highlight, languageForFile } from "./highlight.js";
 
 const dom = Object.fromEntries(
   [
@@ -18,6 +19,7 @@ const dom = Object.fromEntries(
     "examples",
     "share",
     "gutter",
+    "highlight",
     "source",
     "tabs",
     "result",
@@ -169,6 +171,13 @@ function syncGutter() {
     dom.gutter.textContent = Array.from({ length: lines }, (_, i) => i + 1).join("\n");
   }
   dom.gutter.scrollTop = dom.source.scrollTop;
+  dom.highlight.scrollTop = dom.source.scrollTop;
+  dom.highlight.scrollLeft = dom.source.scrollLeft;
+}
+
+/** Redraws the highlighted layer sitting behind the (invisible) textarea. */
+function highlightSchema() {
+  dom.highlight.firstElementChild.innerHTML = highlight(dom.source.value, "defs");
 }
 
 /** Puts the caret on `line`, so a diagnostic can be clicked to reach it. */
@@ -211,6 +220,7 @@ function scheduleCompile() {
 
 function onEdit() {
   syncGutter();
+  highlightSchema();
   save();
   if (dom.optAuto.checked) scheduleCompile();
 }
@@ -299,7 +309,7 @@ function renderPanel() {
     case "code":
       dom.result.replaceChildren(
         files.length > 0
-          ? el("pre", {}, el("code", { text: files[activeFile].contents }))
+          ? el("pre", {}, codeBlock(files[activeFile]))
           : placeholder(
               result.error ??
                 "No code: the schema has errors. See the Problems tab for what to fix.",
@@ -334,6 +344,13 @@ function renderPanel() {
 
 function placeholder(text) {
   return el("div", { class: "placeholder" }, el("p", { text }));
+}
+
+/** A generated file's contents, highlighted for the language its extension implies. */
+function codeBlock(file) {
+  const code = el("code", {});
+  code.innerHTML = highlight(file.contents, languageForFile(file.name));
+  return code;
 }
 
 function renderProblems() {
@@ -618,6 +635,7 @@ async function start() {
     dom.stem.value = first.stem;
   }
   syncGutter();
+  highlightSchema();
   await boot();
 }
 

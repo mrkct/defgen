@@ -75,13 +75,16 @@
         </div>
         <div class="editor">
           <div class="gutter" id="gutter" aria-hidden="true"></div>
-          <textarea
-            id="source"
-            spellcheck="false"
-            autocapitalize="off"
-            autocorrect="off"
-            aria-label="Schema source"
-          ></textarea>
+          <div class="code-input">
+            <pre class="highlight" id="highlight" aria-hidden="true"><code></code></pre>
+            <textarea
+              id="source"
+              spellcheck="false"
+              autocapitalize="off"
+              autocorrect="off"
+              aria-label="Schema source"
+            ></textarea>
+          </div>
         </div>
       </section>
 
