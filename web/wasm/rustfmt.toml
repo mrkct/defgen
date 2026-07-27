@@ -1,0 +1,4 @@
+# The same settings the compiler crate is formatted with, so a reader moving
+# between the two is not reading two house styles.
+max_width = 110
+use_small_heuristics = "Max"

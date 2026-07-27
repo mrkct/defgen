@@ -13,6 +13,11 @@ handled on iOS but forgotten on Android. `defgen` removes the drift: you
 describe the layout once, and every backend is generated from the same
 checked model, so they can only ever agree with each other.
 
+**[Try it in the browser](https://mrkct.github.io/defgen/)** — the compiler
+runs as WebAssembly, so you can write a schema and read the generated code
+for all six languages without installing anything, and without a schema
+leaving your machine. See [`web/`](web/) for how it is built.
+
 See [`SPEC.md`](SPEC.md) for the full language specification and
 [`GRAMMAR.ebnf`](GRAMMAR.ebnf) for its grammar. The worked example referenced
 throughout the spec lives at
@@ -164,3 +169,11 @@ The conformance tests generate code with each backend from
 `tests/examples/commands.defs`, then run each generated module's own test
 suite (`tests/examples/*_conformance.*`) against the same hand-computed wire
 bytes, so a bug that makes one backend disagree with another fails the build.
+
+The browser playground lives in [`web/`](web/) and is built separately:
+
+```sh
+rustup target add wasm32-unknown-unknown   # once
+./web/build.sh --serve                     # http://localhost:8000
+node web/check.mjs                         # wasm output == CLI output
+```

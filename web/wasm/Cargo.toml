@@ -1,0 +1,29 @@
+[package]
+name = "defgen-wasm"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "WebAssembly entry points for defgen, used by the browser playground."
+
+# A cdylib is what `--target wasm32-unknown-unknown` turns into a `.wasm`
+# module. Nothing links this crate as a Rust library, so it is the only
+# crate type it needs.
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+defgen = { path = "../.." }
+
+[profile.release]
+# The module is downloaded before the page can compile anything, so size is
+# the thing worth optimizing for — the compiler runs on schemas measured in
+# kilobytes, where the speed difference does not show up.
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Its own workspace: the playground is built separately, for a separate
+# target, and has no business being pulled into `cargo test` at the root.
+[workspace]

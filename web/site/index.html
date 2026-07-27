@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>defgen playground</title>
+    <meta
+      name="description"
+      content="Compile a defgen .defs BLE GATT schema to C, Python, JavaScript, Java, Kotlin or Swift codec source, entirely in your browser."
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%232f6feb'/%3E%3Ctext x='8' y='12' font-family='monospace' font-size='11' font-weight='bold' text-anchor='middle' fill='white'%3Ed%3C/text%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <h1>defgen</h1>
+        <span class="chip-static">playground</span>
+      </div>
+      <p class="tagline">
+        One <code>.defs</code> schema, six matching BLE GATT codecs. The compiler runs as
+        WebAssembly — nothing is uploaded anywhere.
+      </p>
+      <nav>
+        <a href="https://github.com/mrkct/defgen">Source</a>
+        <a href="https://github.com/mrkct/defgen/blob/master/SPEC.md">Language spec</a>
+      </nav>
+    </header>
+
+    <form class="toolbar" id="toolbar" autocomplete="off">
+      <fieldset class="field field-backends">
+        <legend>Backend</legend>
+        <div class="chips" id="backends" role="radiogroup" aria-label="Backend"></div>
+        <p class="hint" id="backend-hint"></p>
+      </fieldset>
+
+      <fieldset class="field">
+        <legend><label for="stem">Schema name</label></legend>
+        <div class="stem-input">
+          <input id="stem" type="text" value="schema" size="12" spellcheck="false" />
+          <span class="suffix">.defs</span>
+        </div>
+        <p class="hint">Names the generated file, module and include guard.</p>
+      </fieldset>
+
+      <fieldset class="field">
+        <legend>Also show</legend>
+        <div class="toggles">
+          <label><input type="checkbox" id="opt-ast" /> Syntax tree <code>--ast</code></label>
+          <label><input type="checkbox" id="opt-model" /> Checked model <code>--model</code></label>
+          <label><input type="checkbox" id="opt-auto" checked /> Generate as I type</label>
+        </div>
+      </fieldset>
+
+      <div class="field field-actions">
+        <button type="submit" id="generate" class="primary">Generate</button>
+        <p class="hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd></p>
+      </div>
+    </form>
+
+    <main>
+      <section class="pane" aria-labelledby="schema-heading">
+        <div class="pane-head">
+          <h2 id="schema-heading">Schema</h2>
+          <div class="pane-actions">
+            <label class="inline-select">
+              Example
+              <select id="examples"></select>
+            </label>
+            <button type="button" id="share">Copy link</button>
+          </div>
+        </div>
+        <div class="editor">
+          <div class="gutter" id="gutter" aria-hidden="true"></div>
+          <textarea
+            id="source"
+            spellcheck="false"
+            autocapitalize="off"
+            autocorrect="off"
+            aria-label="Schema source"
+          ></textarea>
+        </div>
+      </section>
+
+      <section class="pane" aria-labelledby="result-heading">
+        <div class="pane-head">
+          <h2 id="result-heading" class="visually-hidden">Result</h2>
+          <div class="tabs" id="tabs" role="tablist"></div>
+          <div class="pane-actions" id="code-actions" hidden>
+            <label class="inline-select" id="file-picker" hidden>
+              File
+              <select id="files"></select>
+            </label>
+            <button type="button" id="copy">Copy</button>
+            <button type="button" id="download">Download</button>
+          </div>
+        </div>
+        <div class="result" id="result" role="tabpanel"></div>
+      </section>
+    </main>
+
+    <footer class="statusbar">
+      <p id="status" class="status">Loading the compiler…</p>
+      <p class="status-right"><span id="timing"></span></p>
+    </footer>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

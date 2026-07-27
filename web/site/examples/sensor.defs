@@ -1,0 +1,72 @@
+// A weather sensor: physical units on the wire, a fixed-size history, a
+// free-text label, and one legacy value that stayed big-endian.
+
+version = 3;
+
+endian: little;
+
+---
+
+/// Temperature in hundredths of a degree Celsius on the wire, degrees in
+/// generated code — the conversion is part of the codec, not of your app.
+scaled Celsius: i16 as f32 (scale: 0.01);
+
+/// Relative humidity in tenths of a percent.
+scaled Humidity: u16 as f32 (scale: 0.1);
+
+/// Where the unit is installed. Variable-length: the wire size follows
+/// whatever the GATT transport actually delivers, up to 16 UTF-8 bytes.
+alias Location = string(max: 16);
+
+/// Firmware may add sources, so this is declared open: an unrecognized value
+/// decodes to `Unknown(raw)` instead of failing.
+enum PowerSource: u2 {
+    Battery = 0,
+    Usb = 1,
+    Solar = 2,
+    else Unknown,
+}
+
+/// One reading, notified every few seconds.
+struct Reading: u48 {
+    temperature: Celsius,
+    humidity: Humidity,
+    battery_percent: u7,
+    charging: bool,
+    source: PowerSource,
+    padding: u6 = 0,   // validated: a non-zero value here fails the decode
+}
+
+/// The last three readings, oldest first. Kept under the 20-byte default
+/// ATT payload so a client does not have to negotiate a larger MTU (§10).
+struct History: u144 {
+    readings: Reading[3],
+}
+
+/// Burned in at the factory, when the tooling only ever spoke big-endian.
+#[endian(big)]
+struct FactoryId: u32 {
+    id: u32,
+}
+
+service Weather(uuid: "0000181a-0000-1000-8000-00805f9b34fb") {
+    characteristic ReadingChar(
+        uuid: "8f1c0001-2a3b-4c5d-9e6f-000000000000",
+        properties: [read, notify],
+    ): Reading;
+
+    characteristic HistoryChar(
+        uuid: "8f1c0002-2a3b-4c5d-9e6f-000000000000",
+        properties: [read],
+    ): History;
+
+    characteristic LocationChar(
+        uuid: "8f1c0003-2a3b-4c5d-9e6f-000000000000",
+        properties: [read, write],
+    ): Location;
+
+    characteristic FactoryIdChar(
+        uuid: "8f1c0004-2a3b-4c5d-9e6f-000000000000",
+        properties: [read],
+    ): FactoryId;
+}
