@@ -67,7 +67,7 @@
 use super::{Backend, Generated, GeneratedFile, Options, sanitize_stem, screaming, snake};
 use crate::ast::{Docs, Endianness, FloatType, Property};
 use crate::model::{
-    Enum, Field, FieldRole, Model, Scaled, Struct, TypeDef, TypeKind, Union, WireType, int_range,
+    Const, Enum, Field, FieldRole, Model, Scaled, Struct, TypeDef, TypeKind, Union, WireType, int_range,
 };
 
 pub struct PythonBackend;
@@ -617,6 +617,7 @@ impl<'m> Emitter<'m> {
     fn public_names(&self) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
         names.extend(ERRORS.iter().map(|(name, _, _)| (*name).to_string()));
+        names.extend(self.m.consts.iter().map(|c| screaming(&c.name)));
 
         for def in &self.m.types {
             let name = ident(&def.name);
@@ -872,6 +873,21 @@ impl<'m> Emitter<'m> {
                 self.entry_functions(def);
             }
         }
+        if !m.consts.is_empty() {
+            self.banner("Constants");
+            for c in &m.consts {
+                self.declare_const(c);
+            }
+        }
+    }
+
+    // -- const (§3.1) ---------------------------------------------------------
+
+    fn declare_const(&mut self, c: &'m Const) {
+        let value = if c.negative { format!("-{}", c.magnitude) } else { c.magnitude.to_string() };
+        self.line(0, &format!("{}: Final[int] = {value}", screaming(&c.name)));
+        self.docs_with(0, &c.docs, &[]);
+        self.gap();
     }
 
     // -- alias (§3) ---------------------------------------------------------

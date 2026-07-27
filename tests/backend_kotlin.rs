@@ -349,6 +349,14 @@ fn enum_variants_become_screaming_snake_members_when_closed() {
 }
 
 #[test]
+fn constants_become_top_level_vals() {
+    // §3.1: no wire form, no codec — just a named value.
+    let file = file_of(&schema("const MaxRetries: u8 = 5;\nconst MinTemperature: i16 = -40;"), "s");
+    assert_contains(&file, "val MAX_RETRIES: UByte = 5.toUByte()");
+    assert_contains(&file, "val MIN_TEMPERATURE: Short = (-40).toShort()");
+}
+
+#[test]
 fn an_implicitly_numbered_enum_gets_the_values_the_checker_resolved() {
     // §5: the counter advances from the last explicit value it saw.
     let src = schema(

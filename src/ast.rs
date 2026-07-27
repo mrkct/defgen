@@ -103,6 +103,7 @@ pub enum Decl {
     Enum(EnumDecl),
     Union(UnionDecl),
     Struct(StructDecl),
+    Const(ConstDecl),
     Service(ServiceDecl),
 }
 
@@ -114,6 +115,7 @@ impl Decl {
             Decl::Enum(d) => &d.name,
             Decl::Union(d) => &d.name,
             Decl::Struct(d) => &d.name,
+            Decl::Const(d) => &d.name,
             Decl::Service(d) => &d.name,
         }
     }
@@ -125,6 +127,7 @@ impl Decl {
             Decl::Enum(d) => d.span,
             Decl::Union(d) => d.span,
             Decl::Struct(d) => d.span,
+            Decl::Const(d) => d.span,
             Decl::Service(d) => d.span,
         }
     }
@@ -136,6 +139,7 @@ impl Decl {
             Decl::Enum(d) => &d.docs,
             Decl::Union(d) => &d.docs,
             Decl::Struct(d) => &d.docs,
+            Decl::Const(d) => &d.docs,
             Decl::Service(d) => &d.docs,
         }
     }
@@ -148,6 +152,7 @@ impl Decl {
             Decl::Enum(_) => "enum",
             Decl::Union(_) => "tagged union",
             Decl::Struct(_) => "struct",
+            Decl::Const(_) => "constant",
             Decl::Service(_) => "service",
         }
     }
@@ -401,6 +406,29 @@ impl StructDecl {
     pub fn declared_variable(&self) -> bool {
         self.width_bits.is_none()
     }
+}
+
+/// `const Name: uN|iN = <literal>;` — a named integer constant with no wire
+/// presence of its own: a plain value threaded straight into generated code
+/// (protocol limits, retry counts, and the like), never read or written by
+/// any codec.
+#[derive(Debug, Clone)]
+pub struct ConstDecl {
+    pub docs: Docs,
+    pub name: Ident,
+    /// Always `UInt`/`Int`: checked at parse time.
+    pub ty: ScalarType,
+    pub value: Spanned<ConstLit>,
+    pub span: Span,
+}
+
+/// An integer literal that may be negative, kept as magnitude plus sign since
+/// the widest legal magnitude (2^128 - 1, for a `u128` constant) does not fit
+/// in `i128` (§2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConstLit {
+    pub magnitude: u128,
+    pub negative: bool,
 }
 
 /// One field of a struct or tagged-union variant.

@@ -68,7 +68,7 @@
 use super::{Backend, Generated, GeneratedFile, Options, camel, sanitize_stem, screaming};
 use crate::ast::{Docs, Endianness, FloatType, Property};
 use crate::model::{
-    Enum, Field, FieldRole, Model, Scaled, Struct, TypeDef, TypeKind, Union, WireType, carrier_bits,
+    Const, Enum, Field, FieldRole, Model, Scaled, Struct, TypeDef, TypeKind, Union, WireType, carrier_bits,
 };
 
 pub struct SwiftBackend;
@@ -819,6 +819,22 @@ impl<'m> Emitter<'m> {
                 self.entry_functions(def);
             }
         }
+        if !m.consts.is_empty() {
+            self.banner("Constants");
+            for c in &m.consts {
+                self.declare_const(c);
+            }
+        }
+    }
+
+    // -- const (§3.1) -----------------------------------------------------------
+
+    fn declare_const(&mut self, c: &Const) {
+        let ty = carrier_type(c.bits, c.signed);
+        let value = if c.negative { format!("-{}", c.magnitude) } else { c.magnitude.to_string() };
+        self.docs_with(0, &c.docs, &[]);
+        self.line(0, &format!("let {}: {ty} = {value}", screaming(&c.name)));
+        self.blank();
     }
 
     /// Whether `def` is bound to a characteristic (§10) but has no type of

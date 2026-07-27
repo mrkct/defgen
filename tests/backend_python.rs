@@ -444,6 +444,14 @@ fn enum_variants_become_screaming_snake_members() {
 }
 
 #[test]
+fn constants_become_module_level_finals() {
+    // §3.1: no wire form, no codec — just a named value.
+    let module = module_of(&schema("const MaxRetries: u8 = 5;\nconst MinTemperature: i16 = -40;"), "s");
+    assert_contains(&module, "MAX_RETRIES: Final[int] = 5");
+    assert_contains(&module, "MIN_TEMPERATURE: Final[int] = -40");
+}
+
+#[test]
 fn an_implicitly_numbered_enum_gets_the_values_the_checker_resolved() {
     // §5: the counter advances from the last explicit value it saw.
     let src = schema(

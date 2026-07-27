@@ -657,6 +657,10 @@ impl<'a> Parser<'a> {
             }
             TokKind::Kw(Kw::Enum) => self.parse_enum_or_union(docs, attrs).map(Some),
             TokKind::Kw(Kw::Struct) => Ok(Some(Decl::Struct(self.parse_struct(docs, attrs)?))),
+            TokKind::Kw(Kw::Const) => {
+                self.reject_attrs(&attrs, "a `const`");
+                Ok(Some(Decl::Const(self.parse_const(docs)?)))
+            }
             TokKind::Kw(Kw::Service) => {
                 self.reject_attrs(&attrs, "a `service`");
                 Ok(Some(Decl::Service(self.parse_service(docs)?)))
@@ -687,7 +691,7 @@ impl<'a> Parser<'a> {
                 let mut d = self.diag(
                     span,
                     format!("expected a declaration, found identifier `{name}`"),
-                    "expected `alias`, `scaled`, `enum`, `struct` or `service`",
+                    "expected `alias`, `scaled`, `enum`, `struct`, `const` or `service`",
                 );
                 let keywords: Vec<&str> = Kw::DECL_KEYWORDS.iter().map(|k| k.as_str()).collect();
                 if let Some(s) = suggest(&name, &keywords) {
@@ -695,7 +699,14 @@ impl<'a> Parser<'a> {
                 }
                 Err(self.emit(d))
             }
-            _ => Err(self.expected_one_of(&["`alias`", "`scaled`", "`enum`", "`struct`", "`service`"])),
+            _ => Err(self.expected_one_of(&[
+                "`alias`",
+                "`scaled`",
+                "`enum`",
+                "`struct`",
+                "`const`",
+                "`service`",
+            ])),
         }
     }
 
@@ -949,6 +960,66 @@ impl<'a> Parser<'a> {
 enum ScaledArg {
     Scale(Spanned<f64>),
     Offset(Spanned<f64>),
+}
+
+// ---------------------------------------------------------------------------
+// const (§new)
+// ---------------------------------------------------------------------------
+
+impl<'a> Parser<'a> {
+    fn parse_const(&mut self, docs: Docs) -> PResult<ConstDecl> {
+        let kw_span = self.bump().span; // `const`
+        let name = self.expect_ident("a constant name")?;
+        self.ctx.push(Ctx { what: format!("constant `{}`", name.name), span: name.span });
+
+        self.expect(Punct::Colon, "the constant name")?;
+        let ty = self.parse_scalar_type()?;
+        match ty.kind {
+            ScalarKind::UInt(_) | ScalarKind::Int(_) => {}
+            _ => {
+                let found = ty.span.text(self.src).to_string();
+                let d = self
+                    .diag(
+                        ty.span,
+                        format!("a `const` must be an integer wire type, found `{found}`"),
+                        "expected `uN` or `iN`",
+                    )
+                    .note("a constant is a plain integer value shared into generated code; `bool` and named types have no meaning here")
+                    .help("use an integer type, e.g. `const MaxRetries: u8 = 5;`");
+                return Err(self.emit(d));
+            }
+        }
+
+        self.expect(Punct::Eq, "the constant's type")?;
+        let value = self.parse_const_value()?;
+        let semi = self.expect(Punct::Semi, "the constant's value")?;
+        self.ctx.pop();
+        Ok(ConstDecl { docs, name, ty, value, span: kw_span.to(semi) })
+    }
+
+    /// A constant's value: an optionally-negative integer literal. Whether the
+    /// sign and magnitude actually fit the declared type is a cross-node rule
+    /// (it needs the type), so it is left to the semantic pass, the same way
+    /// an enum variant's fit against its backing width is (§5, §11).
+    fn parse_const_value(&mut self) -> PResult<Spanned<ConstLit>> {
+        let start = self.span();
+        let negative = self.eat_punct(Punct::Minus);
+        match self.peek().clone() {
+            TokKind::Int(v) => {
+                let end = self.bump().span;
+                let span = if negative { start.to(end) } else { end };
+                Ok(Spanned::new(ConstLit { magnitude: v, negative }, span))
+            }
+            TokKind::Float(_) => {
+                let span = self.span();
+                let d = self
+                    .diag(span, "a constant's value must be a whole number", "found a fractional number")
+                    .help("defgen constants are plain integers; use `scaled` for a fixed-point physical value (§4)");
+                Err(self.emit(d))
+            }
+            _ => Err(self.expected("a constant value (an integer literal)")),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -291,6 +291,31 @@ fn scaled_accepts_negative_offsets() {
 }
 
 // ---------------------------------------------------------------------------
+// const (§3.1)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn const_requires_an_integer_type() {
+    assert_first("const T: bool = 1;", "a `const` must be an integer wire type, found `bool`");
+    assert_first("const T: Volume = 1;\nalias Volume = u4;", "a `const` must be an integer wire type");
+}
+
+#[test]
+fn const_value_must_be_a_whole_number() {
+    assert_first("const T: u8 = 1.5;", "a constant's value must be a whole number");
+}
+
+#[test]
+fn const_value_must_be_an_integer_literal() {
+    assert_first("const T: u8 = true;", "expected a constant value (an integer literal)");
+}
+
+#[test]
+fn const_cannot_carry_attributes() {
+    assert_first("#[endian(big)]\nconst T: u8 = 1;", "attributes cannot be applied to a `const`");
+}
+
+// ---------------------------------------------------------------------------
 // Attributes (§1.2)
 // ---------------------------------------------------------------------------
 

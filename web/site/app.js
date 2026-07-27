@@ -445,6 +445,16 @@ function renderSummary(summary) {
     ),
   );
 
+  const consts = summary.consts.map((constant) =>
+    el(
+      "tr",
+      {},
+      el("td", { class: "name", text: constant.name }),
+      el("td", { text: constant.type }),
+      el("td", { class: "size", text: constant.value }),
+    ),
+  );
+
   const services = summary.services.flatMap((service) => [
     el(
       "p",
@@ -476,10 +486,15 @@ function renderSummary(summary) {
       { class: "facts" },
       el("span", { class: "fact" }, el("b", { text: summary.endian }), "-endian by default"),
       el("span", { class: "fact", text: plural(summary.types.length, "type") }),
+      summary.consts.length > 0
+        ? el("span", { class: "fact", text: plural(summary.consts.length, "constant") })
+        : null,
       el("span", { class: "fact", text: plural(summary.services.length, "service") }),
     ),
     el("h3", { text: "Types" }),
     table(["Name", "Kind", "Size", ""], types),
+    consts.length > 0 ? el("h3", { text: "Constants" }) : null,
+    consts.length > 0 ? table(["Name", "Type", "Value"], consts) : null,
     services.length > 0 ? el("h3", { text: "GATT bindings" }) : null,
     services,
   );

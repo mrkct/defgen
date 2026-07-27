@@ -413,6 +413,41 @@ pub enum FieldRole {
 }
 
 // ---------------------------------------------------------------------------
+// Constants (§3.1)
+// ---------------------------------------------------------------------------
+
+/// `const Name: uN|iN = <literal>;` (§3.1) — a named integer value with no
+/// wire representation: nothing resolves to it, and it carries no
+/// [`TypeId`], so a backend reads [`Model::consts`] directly rather than
+/// finding these mixed into [`Model::types`].
+#[derive(Debug, Clone)]
+pub struct Const {
+    pub docs: Docs,
+    pub span: Span,
+    pub name: String,
+    pub bits: u32,
+    pub signed: bool,
+    /// The literal's absolute value; `negative` says which side of zero.
+    /// Kept apart because the widest legal magnitude (2^128 - 1, a `u128`
+    /// constant) does not fit in `i128`.
+    pub magnitude: u128,
+    pub negative: bool,
+}
+
+impl Const {
+    /// The constant as a signed value. Only meaningful when `signed`; a
+    /// checked model's signed constant always fits (§2, §3.1 both enforce
+    /// the same range check an enum value gets), so this never truncates.
+    pub fn as_i128(&self) -> i128 {
+        if self.negative {
+            if self.magnitude == 1u128 << 127 { i128::MIN } else { -(self.magnitude as i128) }
+        } else {
+            self.magnitude as i128
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // GATT metadata (§10)
 // ---------------------------------------------------------------------------
 
@@ -452,6 +487,8 @@ pub struct Model {
     /// Every declared type, in source order.
     pub types: Vec<TypeDef>,
     pub services: Vec<Service>,
+    /// Every `const` declaration, in source order (§3.1).
+    pub consts: Vec<Const>,
 }
 
 impl Model {

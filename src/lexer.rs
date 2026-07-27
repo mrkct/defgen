@@ -17,6 +17,7 @@ pub enum Kw {
     Alias,
     As,
     Characteristic,
+    Const,
     Else,
     Enum,
     Padding,
@@ -33,6 +34,7 @@ impl Kw {
             Kw::Alias => "alias",
             Kw::As => "as",
             Kw::Characteristic => "characteristic",
+            Kw::Const => "const",
             Kw::Else => "else",
             Kw::Enum => "enum",
             Kw::Padding => "padding",
@@ -49,6 +51,7 @@ impl Kw {
             "alias" => Kw::Alias,
             "as" => Kw::As,
             "characteristic" => Kw::Characteristic,
+            "const" => Kw::Const,
             "else" => Kw::Else,
             "enum" => Kw::Enum,
             "padding" => Kw::Padding,
@@ -62,7 +65,7 @@ impl Kw {
     }
 
     /// Words a misspelled declaration keyword might have meant.
-    pub const DECL_KEYWORDS: [Kw; 5] = [Kw::Alias, Kw::Scaled, Kw::Enum, Kw::Struct, Kw::Service];
+    pub const DECL_KEYWORDS: [Kw; 6] = [Kw::Alias, Kw::Scaled, Kw::Enum, Kw::Struct, Kw::Const, Kw::Service];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

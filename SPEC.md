@@ -87,9 +87,9 @@ exists so future per-declaration options don't each need their own bolted-
 on syntax. In v1 the only recognized attribute is `endian(little|big)`
 (§8); an unrecognized attribute name is a compile error.
 
-`plain` enums, `alias`, and `scaled` declarations don't have their own byte
-order (§8 — only root containers do) and so cannot carry `#[endian(...)]`;
-doing so is a compile error.
+`plain` enums, `alias`, `scaled` and `const` declarations don't have their own
+byte order (§8 — only root containers do) and so cannot carry
+`#[endian(...)]`; doing so is a compile error.
 
 ## 2. Primitive types
 
@@ -149,6 +149,36 @@ variable-length `string`/array (§6.3) — a domain name. It is purely a
 compile-time convenience: it generates no runtime type of its own, and
 carries no conversion or unit metadata — that's what `scaled` (§4) is for.
 `scaled` itself may only wrap `uN`/`iN`, never a variable-length type.
+
+### 3.1 Constants
+
+```
+const MaxRetries: u8 = 5;
+const MinTemperature: i16 = -40;
+```
+
+`const Name: uN|iN = <literal>;` declares a named integer value with no wire
+presence of its own — unlike everything else in this section, it is never a
+field's type, an alias target, or a characteristic binding. It exists purely
+so a schema can hand generated code a shared magic number (a retry count, a
+protocol version, a sensible default) once, instead of each language's
+project re-declaring it by hand and risking drift between them — the same
+concern §0 raises about hand-written codecs, applied to plain values instead
+of wire layout.
+
+- The declared type is always `uN` or `iN` (§2); `bool`, a `scaled` type, an
+  `enum`, or any other declared name may not back a `const`.
+- The literal may be negative only for an `iN` constant; `uN` has no sign.
+  Either way, the value must fit the declared type's range exactly as a field
+  value would (§2, §11) — encode-time range checking has no meaning here,
+  since a constant is never encoded, but the same bound still applies: a value
+  a backend could never actually hold in the type is a compile error, not a
+  silent truncation.
+- A `const` is not a type: it cannot be named as a field's type, an array
+  element, an alias target, or a characteristic binding. It exists only to be
+  read back by the code a project writes around the generated module.
+- Each backend emits it as that language's closest idiom for a named,
+  immutable integer value (§12).
 
 ## 4. Scaled types
 
@@ -503,6 +533,12 @@ service HearingAidControl(uuid: "7d8f0000-...") {
 - A container width or `padding` run above 4096 bits, or a *value* (a
   field, `reserved` run, enum backing type or discriminant) above 128 (§2).
 - A `scaled` declaration's `RawType` not being `uN`/`iN`.
+- A `const` declared with a type other than `uN`/`iN`, a negative literal on
+  a `uN` constant, or a literal that does not fit the declared type's range
+  (§3.1).
+- A `const` name used as a field's type, an array element, an alias target, or
+  a characteristic binding (§3.1) — a constant has no wire representation to
+  bind.
 - An unrecognized `#[...]` attribute name, or `#[endian(...)]` on a
   declaration that is only ever used as a nested field.
 - A variable-length field (`string`/`Type[max: N]`/a variable-length
@@ -533,6 +569,9 @@ service HearingAidControl(uuid: "7d8f0000-...") {
 
 Each backend must, at minimum:
 
+- Emit a `const` (§3.1) as that language's idiom for a named, immutable
+  integer value, holding the exact declared value — no codec, since a
+  constant is never encoded or decoded.
 - Emit an encode function/method and a decode function/method per root
   type (struct, or tagged-union), operating on a fixed-size byte buffer
   of exactly that type's byte length.

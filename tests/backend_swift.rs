@@ -312,6 +312,19 @@ fn a_scaled_type_exposes_both_representations() {
 }
 
 #[test]
+fn constants_become_top_level_lets() {
+    // §3.1: no wire form, no codec — just a named value.
+    let file = file_of(
+        &schema("const MaxRetries: u8 = 5;\nconst MinTemperature: i16 = -40;\nconst Big: u128 = 5;"),
+        "s",
+    );
+    assert_contains(&file, "let MAX_RETRIES: UInt8 = 5");
+    assert_contains(&file, "let MIN_TEMPERATURE: Int16 = -40");
+    // Swift 6's native 128-bit integers need no arbitrary-precision fallback.
+    assert_contains(&file, "let BIG: UInt128 = 5");
+}
+
+#[test]
 fn scaled_rounding_rounds_half_away_from_zero() {
     // §4, §13: every backend has to agree on a raw integer down to the last
     // unit — Swift's own `.rounded(_:)` supports this rule directly, unlike

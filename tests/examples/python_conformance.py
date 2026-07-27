@@ -532,6 +532,11 @@ def test_type_hints() -> None:
     check(len(classes) > 10, f"and its classes ({len(classes)} classes)")
 
 
+def test_constants() -> None:
+    check(m.MAX_WRITE_LENGTH == 32, "MAX_WRITE_LENGTH")
+    check(m.MIN_RATED_TEMPERATURE == -40, "MIN_RATED_TEMPERATURE")
+
+
 def main() -> int:
     test_status()
     test_open_enum()
@@ -544,6 +549,7 @@ def main() -> int:
     test_diagnostic_label()
     test_owner_name()
     test_metadata()
+    test_constants()
     test_type_hints()
 
     if failures == 0:

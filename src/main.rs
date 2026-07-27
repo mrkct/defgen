@@ -150,6 +150,12 @@ fn summarize(filename: &str, model: &Model, generated: &Generated) {
         println!("{line}");
     }
 
+    for c in &model.consts {
+        let ty = format!("{}{}", if c.signed { "i" } else { "u" }, c.bits);
+        let value = if c.negative { format!("-{}", c.magnitude) } else { c.magnitude.to_string() };
+        println!("  const {}: {ty} = {value}", c.name);
+    }
+
     for service in &model.services {
         println!("  service {} ({})", service.name, service.uuid);
         for c in &service.characteristics {
