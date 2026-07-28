@@ -617,7 +617,10 @@ fn type_names_that_would_shadow_a_builtin_are_escaped() {
     assert_contains(&module, "class int_:");
     assert_contains(&module, "class bytes_:");
     assert_contains(&module, "class list_:");
-    assert_contains(&module, "return cls(int.from_bytes(data, \"big\" if big else \"little\"))");
+    assert_contains(
+        &module,
+        "return cls(len(data), big, int.from_bytes(data, \"big\" if big else \"little\"))",
+    );
     // The schema's own spelling still names the type in its error messages.
     assert_contains(&module, "f\"int: expected 1 bytes, got {len(data)}\"");
     assert_valid(&module, "builtin_type_names");
@@ -704,12 +707,20 @@ fn sizes_are_exposed_as_class_constants() {
 #[test]
 fn byte_order_is_resolved_per_root_container() {
     // §8: the file default, and the one struct that overrides it. Byte order
-    // reaches the wire in exactly one place — where the bits meet `bytes`.
+    // reaches the wire in exactly one place — the container the bits are packed
+    // into, which carries both its size and its byte order.
     let module = example_module();
-    assert_contains(&class_body(&module, "Status"), "return _bits.to_bytes(8, big=False)");
-    assert_contains(&class_body(&module, "LegacySerial"), "return _bits.to_bytes(4, big=True)");
+    assert_contains(&class_body(&module, "Status"), "_bits = _Bits(8, big=False)");
+    assert_contains(&class_body(&module, "LegacySerial"), "_bits = _Bits(4, big=True)");
     assert_contains(&class_body(&module, "LegacySerial"), "_Bits.from_bytes(data, big=True)");
-    assert_contains(&module, "return cls(int.from_bytes(data, \"big\" if big else \"little\"))");
+    assert_contains(
+        &module,
+        "return cls(len(data), big, int.from_bytes(data, \"big\" if big else \"little\"))",
+    );
+
+    // The mirror is what makes a big-endian container fill from its
+    // most-significant end while its fields stay in declaration order (§6).
+    assert_contains(&module, "return self.size * 8 - off - bits if self.big else off");
 }
 
 #[test]
@@ -738,7 +749,12 @@ fn a_container_default_goes_through_default_factory() {
         &module,
         "points: list[Orientation] = field(default_factory=lambda: [Orientation() for _ in range(2)])",
     );
-    assert!(!module.contains(": list[Temperature] = ["), "a list literal default would be shared");
+    // Anchored to a field line: a `Temperature[max: N]` tail declares a local
+    // `list[Temperature] = []` inside its unpack, which is not a shared default.
+    assert!(
+        !module.contains("\n    samples: list[Temperature] = ["),
+        "a list literal default would be shared"
+    );
 }
 
 #[test]
@@ -895,7 +911,8 @@ fn a_big_endian_variable_length_root_reaches_its_tail() {
     );
     let module = module_of(&src, "note");
     let body = class_body(&module, "Note");
-    assert_contains(&body, "return _bits.to_bytes(2, big=True) + self._pack_tail(True)");
+    assert_contains(&body, "_bits = _Bits(2, big=True)");
+    assert_contains(&body, "return _bits.to_bytes() + self._pack_tail(True)");
     assert_contains(&body, "_Bits.from_bytes(data[: cls.FIXED_SIZE], big=True)");
     assert_contains(&body, "value._unpack_tail(data[cls.FIXED_SIZE :], True)");
     assert_valid(&module, "big_endian_var");

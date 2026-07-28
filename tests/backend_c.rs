@@ -439,6 +439,10 @@ fn byte_order_is_resolved_per_root_container() {
     let header = example_header();
     assert_contains(&header, "status__pack_fixed(v, buf, STATUS_SIZE, 0, 0u)");
     assert_contains(&header, "legacy_serial__pack_fixed(v, buf, LEGACY_SERIAL_SIZE, 1, 0u)");
+
+    // The mirror is what makes a big-endian container fill from its
+    // most-significant end while its fields stay in declaration order (§6).
+    assert_contains(&header, "return big ? ((uint32_t)size * 8u - off - n) : off;");
 }
 
 #[test]

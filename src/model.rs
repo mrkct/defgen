@@ -378,8 +378,11 @@ pub struct Field {
     pub span: Span,
     pub role: FieldRole,
     pub ty: WireType,
-    /// LSB-first bit offset within the container: fields are packed from bit 0
-    /// in declaration order with no gaps, and this is not configurable (§6).
+    /// Bit offset within the container: fields are packed in declaration order
+    /// from the front of the container with no gaps, and this is not
+    /// configurable (§6). Which end of the container "the front" is depends on
+    /// its byte order, which is applied when the bits meet bytes (§8), not
+    /// here.
     pub offset_bits: u32,
     pub layout: Layout,
 }

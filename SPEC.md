@@ -270,14 +270,22 @@ struct Orientation: u24 {
   See §6.3; a struct either declares an exact bit width and is fully
   fixed, or omits it and ends in exactly one variable-length field —
   nothing in between.
-- Fields are packed starting at bit 0 (the LSB) of the container, in
-  declaration order, with no implicit gaps — bit-level layout is always
-  LSB-first and is **not configurable**. This is a deliberate
-  simplification: because the container is bit-packed into one integer
-  before any byte-level serialization happens, "MSB-first bit packing"
-  would only be meaningful per-container anyway, and BLE payloads
-  overwhelmingly use LSB-first packing already. Byte order (§8) is the
-  only configurable axis.
+- Fields are packed in declaration order with no implicit gaps, starting at
+  the **front** of the container — the first field always occupies the
+  container's first bits, and so its first byte. Declaration order is wire
+  order, whatever the byte order.
+- **Bit order follows byte order** (§8), and is not separately
+  configurable. In a little-endian container fields fill from bit 0, the
+  least significant bit, so the first field's own bit 0 is the container's
+  bit 0; in a big-endian one they fill from the most significant bit down,
+  so the first field's most significant bit is the container's. Both come
+  to the same thing: pack the container as one integer, then write that
+  integer out in the container's byte order. This is the one convention
+  that gets a bit-packed register and a byte-oriented record right at the
+  same time — a little-endian `struct S: u16 { a: u4, b: u12 }` is the
+  `b << 4 | a` that a little-endian device writes, and a big-endian
+  `struct S: u32 { serial: u8[4] }` is the four bytes in the order they
+  were declared, rather than reversed.
 - Nested structs/enums are flattened into the parent's bit sequence; a
   nested type's own `#[endian(...)]` attribute, if any, only takes effect
   when that type is serialized as a root value (bound to a characteristic,
@@ -452,6 +460,20 @@ enum Command(id: u16): u64 {
       serial: u32,
   }
   ```
+- **What byte order does.** A root container is packed as a single integer
+  and written out in its byte order — most significant byte first if it is
+  big-endian, least significant first if little. Field *positions* do not
+  depend on byte order: the first field always occupies the container's
+  first byte, because bit order follows byte order too (§6). What byte
+  order changes is the direction each multi-byte value reads in. So
+
+  ```
+  struct Reading: u32 { id: u8, value: u16, crc: u8 }
+  ```
+
+  is `id`, then `value`, then `crc` on the wire under either setting, with
+  `value` little-endian in a little-endian container and big-endian in a
+  big-endian one — the same layout its datasheet would state.
 - **Endianness is a root-container property only.** A container is "root"
   if it is ever bound directly to a characteristic (§10) or otherwise
   encoded/decoded on its own, as opposed to only ever appearing nested
@@ -462,6 +484,15 @@ enum Command(id: u16): u64 {
   to that flattened sequence, by the root container's setting. A type used
   both nested and standalone must pick one root endianness, applied
   whenever it's the root.
+- **Arrays and variable-length tails.** An array's elements are always in
+  declaration order — `xs: u8[4]` is `xs[0]` first, in the container's
+  first byte — and byte order applies within each element, not across
+  them. A variable-length struct (§6.3) is its fixed prefix followed by
+  its tail: the prefix is one container in the sense above, and each tail
+  element is packed as its own byte-multiple container under the same byte
+  order. A `string` is UTF-8 bytes in order and byte order never touches
+  it. This makes `Type[N]` and `Type[max: N]` lay the same elements out
+  the same way, which is the point.
 - There is intentionally no per-field byte-swap override inside an
   otherwise-consistent container. Genuinely mixed-endianness-within-one-
   container devices are rare enough that v1 treats this as out of scope;
@@ -629,4 +660,5 @@ exists.
   version pragma and no generated version constant at all — evolution
   discipline (never renumbering a value, adding `else` fallbacks) is a
   recommendation for schema authors, not something the tooling tracks.
-- Bit orderings other than LSB-first within a container (§6).
+- Bit order as an axis separate from byte order: a container's bit order
+  always follows its byte order (§6, §8), and neither can be set per field.

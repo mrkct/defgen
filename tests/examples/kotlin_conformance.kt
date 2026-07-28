@@ -139,8 +139,7 @@ fun testOpenEnum() {
 // ---------------------------------------------------------------------------
 
 fun testEndianness() {
-    // LegacySerial carries #[endian(big)]: the flattened bit sequence is
-    // written from the far end of the buffer.
+    // LegacySerial carries #[endian(big)]: its one value reads MSB-first.
     val s = LegacySerial(serial = 0x01020304u)
     val buf = s.encode()
     checkBytes(buf, byteArrayOf(0x01, 0x02, 0x03, 0x04), "LegacySerial is big-endian")
@@ -150,6 +149,52 @@ fun testEndianness() {
     val statusBuf = Status(activeProfile = u(1)).encode()
     check(statusBuf[0] == 0x01.toByte(), "Status is little-endian: low bits land in byte 0")
     check(statusBuf[7] == 0x00.toByte(), "Status is little-endian: byte 7 is untouched")
+}
+
+// A big-endian container with more than one field: they stay in declaration
+// order, first field in the first byte, and only the direction each multi-byte
+// value reads in changes (§8). The nested Orientation is flattened into this
+// container and picks up its byte order.
+fun testBigEndianRecord() {
+    val r = LegacyReading(
+        id = u(0x11),
+        value = us(0x2233),
+        orientation = Orientation(x = 1.toByte(), y = (-2).toByte(), z = 3.toByte()),
+        crc = us(0x4455),
+    )
+    val buf = r.encode()
+    checkBytes(
+        buf,
+        byteArrayOf(0x11, 0x22, 0x33, 0x01, 0xFE.toByte(), 0x03, 0x44, 0x55),
+        "LegacyReading keeps its fields in declaration order",
+    )
+    check(LegacyReading.decode(buf) == r, "LegacyReading round-trips")
+}
+
+// A fixed array and a variable-length tail in one big-endian container: both
+// keep their elements in declaration order, with byte order applying inside an
+// element and never across elements (§8).
+fun testBigEndianSequences() {
+    val key = listOf(u(0xDE), u(0xAD), u(0xBE), u(0xEF))
+    // raw 100 = 0x0064, raw -200 = 0xff38
+    val log = LegacyLog(key = key, samples = listOf(1.0f, -2.0f))
+    val buf = log.encode()
+    checkBytes(
+        buf,
+        byteArrayOf(0xDE.toByte(), 0xAD.toByte(), 0xBE.toByte(), 0xEF.toByte(), 0x00, 0x64, 0xFF.toByte(), 0x38),
+        "LegacyLog keeps its array and tail elements in order",
+    )
+    val back = LegacyLog.decode(buf)
+    check(back.key == key, "LegacyLog's fixed array round-trips")
+    check(temperatureToRaw(back.samples[0]).toInt() == 100, "LegacyLog sample 0")
+    check(temperatureToRaw(back.samples[1]).toInt() == -200, "LegacyLog sample 1")
+
+    // An empty tail is just the prefix (§6.3).
+    checkBytes(
+        LegacyLog(key = key, samples = emptyList()).encode(),
+        byteArrayOf(0xDE.toByte(), 0xAD.toByte(), 0xBE.toByte(), 0xEF.toByte()),
+        "LegacyLog with no samples is its prefix alone",
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -175,7 +220,10 @@ fun testTemperatureLog() {
 
     val back = TemperatureLog.decode(buf)
     check(21.49f < back.samples[0] && back.samples[0] < 21.51f, "samples[0] round-trips")
-    check(back.samples[1] < 0.0f, "samples[1] is negative, i.e. sign-extended")
+    check(
+        temperatureToRaw(back.samples[1]).toInt() == -1,
+        "samples[1] is sign-extended exactly once, i.e. raw -1 and not -65537",
+    )
     check(back.samples[3] > 327.66f, "samples[3] round-trips")
 
     // The raw integer stays reachable, so a round trip need not go through
@@ -374,7 +422,7 @@ fun testMetadata() {
     check(SERVICES == listOf(HEARING_AID_CONTROL), "SERVICES lists every service")
     val service = SERVICES[0]
     check(service.name == "HearingAidControl", "the service keeps its schema name")
-    check(service.characteristics.size == 6, "with all six characteristics, in source order")
+    check(service.characteristics.size == 8, "with all eight characteristics, in source order")
 
     val statusChar = service.characteristics[0]
     check(statusChar.name == "StatusChar", "characteristics are in source order")
@@ -398,6 +446,8 @@ fun main() {
     testStatus()
     testOpenEnum()
     testEndianness()
+    testBigEndianRecord()
+    testBigEndianSequences()
     testTemperatureLog()
     testPadding()
     testCommand()

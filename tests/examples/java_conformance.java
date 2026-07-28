@@ -195,8 +195,7 @@ public class Conformance {
     // -----------------------------------------------------------------------
 
     static void testEndianness() throws Commands.DefgenError {
-        // LegacySerial carries #[endian(big)]: the flattened bit sequence is
-        // written from the far end of the buffer.
+        // LegacySerial carries #[endian(big)]: its one value reads MSB-first.
         byte[] buf = new Commands.LegacySerial(0x01020304L).encode();
         checkBytes(buf, new byte[] {0x01, 0x02, 0x03, 0x04}, "LegacySerial is big-endian");
         check(Commands.LegacySerial.decode(buf).serial() == 0x01020304L, "LegacySerial round-trips");
@@ -205,6 +204,46 @@ public class Conformance {
         byte[] statusBuf = status(1).encode();
         check(statusBuf[0] == 0x01, "Status is little-endian: low bits land in byte 0");
         check(statusBuf[7] == 0x00, "Status is little-endian: byte 7 is untouched");
+    }
+
+    // A big-endian container with more than one field: they stay in declaration
+    // order, first field in the first byte, and only the direction each
+    // multi-byte value reads in changes (§8). The nested Orientation is
+    // flattened into this container and picks up its byte order.
+    static void testBigEndianRecord() throws Commands.DefgenError {
+        Commands.LegacyReading r = new Commands.LegacyReading(
+                (short) 0x11, 0x2233, new Commands.Orientation((byte) 1, (byte) -2, (byte) 3), 0x4455);
+        byte[] buf = r.encode();
+        checkBytes(
+                buf,
+                new byte[] {0x11, 0x22, 0x33, 0x01, (byte) 0xfe, 0x03, 0x44, 0x55},
+                "LegacyReading keeps its fields in declaration order");
+        check(Commands.LegacyReading.decode(buf).equals(r), "LegacyReading round-trips");
+    }
+
+    // A fixed array and a variable-length tail in one big-endian container:
+    // both keep their elements in declaration order, with byte order applying
+    // inside an element and never across elements (§8).
+    static void testBigEndianSequences() throws Commands.DefgenError {
+        List<Short> key = List.of((short) 0xde, (short) 0xad, (short) 0xbe, (short) 0xef);
+        // raw 100 = 0x0064, raw -200 = 0xff38
+        Commands.LegacyLog log = new Commands.LegacyLog(key, List.of(1.0f, -2.0f));
+        byte[] buf = log.encode();
+        checkBytes(
+                buf,
+                new byte[] {(byte) 0xde, (byte) 0xad, (byte) 0xbe, (byte) 0xef, 0x00, 0x64, (byte) 0xff, 0x38},
+                "LegacyLog keeps its array and tail elements in order");
+        Commands.LegacyLog back = Commands.LegacyLog.decode(buf);
+        check(back.key().equals(key), "LegacyLog's fixed array round-trips");
+        check(Commands.temperatureToRaw(back.samples().get(0)) == 100, "LegacyLog sample 0");
+        check(Commands.temperatureToRaw(back.samples().get(1)) == -200, "LegacyLog sample 1");
+
+        // An empty tail is just the prefix (§6.3).
+        byte[] empty = new Commands.LegacyLog(key, List.of()).encode();
+        checkBytes(
+                empty,
+                new byte[] {(byte) 0xde, (byte) 0xad, (byte) 0xbe, (byte) 0xef},
+                "LegacyLog with no samples is its prefix alone");
     }
 
     // -----------------------------------------------------------------------
@@ -226,7 +265,9 @@ public class Conformance {
 
         Commands.TemperatureLog back = Commands.TemperatureLog.decode(buf);
         check(21.49f < back.samples().get(0) && back.samples().get(0) < 21.51f, "samples[0] round-trips");
-        check(back.samples().get(1) < 0.0f, "samples[1] is negative, i.e. sign-extended");
+        check(
+                Commands.temperatureToRaw(back.samples().get(1)) == -1,
+                "samples[1] is sign-extended exactly once, i.e. raw -1 and not -65537");
         check(back.samples().get(3) > 327.66f, "samples[3] round-trips");
 
         // The raw integer stays reachable, so a round trip need not go through
@@ -456,7 +497,7 @@ public class Conformance {
                 "SERVICES lists every service");
         Commands.GattService service = Commands.SERVICES.get(0);
         check(service.name().equals("HearingAidControl"), "the service keeps its schema name");
-        check(service.characteristics().size() == 6, "with all six characteristics, in source order");
+        check(service.characteristics().size() == 8, "with all eight characteristics, in source order");
 
         Commands.GattCharacteristic statusChar = service.characteristics().get(0);
         check(statusChar.name().equals("StatusChar"), "characteristics are in source order");
@@ -479,6 +520,8 @@ public class Conformance {
         testStatus();
         testOpenEnum();
         testEndianness();
+        testBigEndianRecord();
+        testBigEndianSequences();
         testTemperatureLog();
         testPadding();
         testCommand();

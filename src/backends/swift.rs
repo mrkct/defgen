@@ -59,8 +59,10 @@
 //! # Bit and byte order
 //!
 //! A container's bits live in a `[UInt8]` buffer sized to its exact byte
-//! length; `DefgenBits` maps a logical bit index — LSB-first from bit 0 (§6)
-//! — to the physical byte holding it, reversing for a big-endian root (§8).
+//! length; `DefgenBits` maps a value's declared offset (§6) to the physical
+//! bits holding it, mirroring the offset and reversing the bytes for a
+//! big-endian container (§8), which is what has a big-endian container filled
+//! from its most-significant end while its fields stay in declaration order.
 //! Every read and write goes through it, and every value it hands back or
 //! accepts is a `UInt128`, wide enough for any single field (§2) without a
 //! narrower/wider split the way a fixed-width-only language like C needs.
@@ -525,7 +527,7 @@ impl<'m> Emitter<'m> {
             0,
             &[
                 "//",
-                "// Codecs for this schema's GATT values: LSB-first bit packing (§6), with byte",
+                "// Codecs for this schema's GATT values: fields in declaration order (§6), with byte",
                 "// order applied once per root container (§8). Encoding produces a `[UInt8]`;",
                 "// decoding takes the bytes the transport delivered. Anything the schema does",
                 "// not allow throws a `DefgenError`, rather than being quietly truncated,",
@@ -583,13 +585,15 @@ impl<'m> Emitter<'m> {
         self.lines(
             0,
             &[
-                "/// A container's bytes, addressed as LSB-first bits (§6). Byte order (§8)",
-                "/// enters only here — a big-endian container is the same bit sequence read",
-                "/// from the far end of the buffer, so byte order is one flag on the container",
-                "/// rather than something every field has to know about. Every value this reads",
-                "/// or writes is a `UInt128`, wide enough for any single field (§2). Internal",
-                "/// (module-only) access, not `private`: a nested type's own `packFixed` takes",
-                "/// one as a parameter, so it has to be at least as visible as that method.",
+                "/// A container's bytes, addressed as bits. Fields occupy the container in",
+                "/// declaration order, first field first, and byte order (§8) chooses which end",
+                "/// of it they fill from: little-endian from the least-significant end,",
+                "/// big-endian from the most-significant one (§6). `start` is the whole of that",
+                "/// difference, so byte order is one flag on the container rather than something",
+                "/// every field has to know about. Every value this reads or writes is a",
+                "/// `UInt128`, wide enough for any single field (§2). Internal (module-only)",
+                "/// access, not `private`: a nested type's own `packFixed` takes one as a",
+                "/// parameter, so it has to be at least as visible as that method.",
                 "final class DefgenBits {",
                 "    private(set) var bytes: [UInt8]",
                 "    private let big: Bool",
@@ -612,21 +616,28 @@ impl<'m> Emitter<'m> {
                 "        return big ? (bytes.count - 1 - i) : i",
                 "    }",
                 "",
-                "    /// The `bits` bits starting at `off`.",
+                "    /// Where a `bits`-wide value declared at `off` starts within the container.",
+                "    private func start(_ off: Int, _ bits: Int) -> Int {",
+                "        big ? (bytes.count * 8 - off - bits) : off",
+                "    }",
+                "",
+                "    /// The `bits` bits of the value declared at `off`.",
                 "    func get(_ off: Int, _ bits: Int) -> UInt128 {",
                 "        var v: UInt128 = 0",
+                "        let base = start(off, bits)",
                 "        for i in 0..<bits {",
-                "            let bit = off + i",
+                "            let bit = base + i",
                 "            let byte = bytes[byteIndex(bit)]",
                 "            v |= UInt128((byte >> (bit & 7)) & 1) << i",
                 "        }",
                 "        return v",
                 "    }",
                 "",
-                "    /// Writes the low `bits` bits of `value` at `off`.",
+                "    /// Writes the low `bits` bits of `value` into the value declared at `off`.",
                 "    func put(_ off: Int, _ bits: Int, _ value: UInt128) {",
+                "        let base = start(off, bits)",
                 "        for i in 0..<bits {",
-                "            let bit = off + i",
+                "            let bit = base + i",
                 "            let idx = byteIndex(bit)",
                 "            let mask: UInt8 = 1 << (bit & 7)",
                 "            if (value >> i) & 1 == 1 {",
