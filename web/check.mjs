@@ -49,7 +49,7 @@ for (const file of readdirSync(examples).filter((name) => name.endsWith(".defs")
   for (const { name } of backends) {
     // Run the CLI from the examples directory so the path it stamps into the
     // "do not edit" banner is the bare file name the playground passes.
-    const run = spawnSync(cli, [file, "--backend", name], { cwd: examples, encoding: "utf8" });
+    const run = spawnSync(cli, ["codec", file, "--language", name], { cwd: examples, encoding: "utf8" });
     if (run.error) {
       throw run.error.code === "ENOENT"
         ? new Error(`no defgen binary at ${cli} — build one with \`cargo build --release\``)

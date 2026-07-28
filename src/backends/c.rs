@@ -119,7 +119,11 @@ const C_KEYWORDS: &[&str] = &[
 ];
 
 /// A schema name as a C identifier, escaped if it collides with a keyword.
-fn ident(name: &str) -> String {
+///
+/// Public because the GATT server generators in [`crate::stacks`] name the same
+/// types this backend declares, and a second copy of the escaping rule is a
+/// second chance to get it wrong.
+pub fn ident(name: &str) -> String {
     if C_KEYWORDS.contains(&name) { format!("{name}_") } else { name.to_string() }
 }
 

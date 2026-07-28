@@ -13,6 +13,10 @@ handled on iOS but forgotten on Android. `defgen` removes the drift: you
 describe the layout once, and every backend is generated from the same
 checked model, so they can only ever agree with each other.
 
+The same schema also describes the device's side of the link, so `defgen`
+generates the firmware's GATT service table from it too — see
+[Supported firmware stacks](#supported-firmware-stacks).
+
 **[Try it in the browser](https://mrkct.github.io/defgen/)** — the compiler
 runs as WebAssembly, so you can write a schema and read the generated code
 for all six languages without installing anything, and without a schema
@@ -26,9 +30,9 @@ See [`SPEC.md`](SPEC.md) for the full language specification and
 throughout the spec lives at
 [`tests/examples/commands.defs`](tests/examples/commands.defs).
 
-## Supported backends
+## Supported languages
 
-| Backend    | `--backend`  | Output |
+| Language   | `--language` | Output |
 |------------|--------------|--------|
 | C          | `c`          | a single self-contained C99 header |
 | Python     | `python`     | a single self-contained, type-hinted module (Python 3.10+) |
@@ -40,6 +44,21 @@ throughout the spec lives at
 Every backend generates from the same checked model, so bit offsets, enum
 values, byte order and variable-length handling are identical across all six
 — see §13 of `SPEC.md` for the cross-backend conformance guarantee.
+
+## Supported firmware stacks
+
+The same `service`/`characteristic` bindings that tell a client app which
+characteristic carries which type also describe the GATT server on the other
+end, so `defgen` generates that too:
+
+| Stack  | `--stack` | Output |
+|--------|-----------|--------|
+| Zephyr | `zephyr`  | a `BT_GATT_SERVICE_DEFINE` table, ATT callbacks and notify helpers, plus the C header they call |
+
+A service table is a *stack* choice, not a language choice — Zephyr, NimBLE
+and ESP-IDF want completely different code, and all of it is C regardless of
+what the apps talking to it are written in. That is why it is a separate
+subcommand rather than another value of `--language`.
 
 ## What a schema looks like
 
@@ -91,28 +110,38 @@ prebuilt binary from the [releases page](https://github.com/mrkct/defgen/release
 
 ## Usage
 
+Three subcommands, one per kind of thing a schema can become:
+
 ```sh
-defgen <SCHEMA.defs> --backend <c|python|javascript|java|kotlin|swift> [-o <PATH>]
+defgen codec  <SCHEMA.defs> --language <c|python|javascript|java|kotlin|swift> [-o <PATH>]
+defgen server <SCHEMA.defs> --stack <zephyr> [-o <DIR>]
+defgen check  <SCHEMA.defs> [--ast] [--model]
 ```
 
 ```sh
 # Write light.py next to the schema
-defgen light.defs --backend python -o light.py
+defgen codec light.defs --language python -o light.py
 
 # Or print to stdout
-defgen light.defs --backend c
+defgen codec light.defs --language c
+
+# Generate the firmware's GATT server into src/gatt/
+defgen server light.defs --stack zephyr -o src/gatt/
 ```
 
 `-o`/`--out` takes a file path for single-file backends, or a directory when
 a backend emits more than one file. Omit it to print the generated code to
 standard output.
 
-Two flags help while writing a schema (`--backend` is still required, though
-its value is otherwise unused for these):
+`server` writes the codec header alongside the service table, since the table
+`#include`s it — pass `--no-codec` if a separate `defgen codec` run already
+produces it. It fails on a schema with no `service`, since there would be
+nothing to serve.
 
-- `--ast` — dump the parsed syntax tree instead of generating code.
-- `--model` — dump the checked model (resolved layouts, offsets, enum
-  values) instead of generating code.
+`check` parses and type-checks without generating anything, which is what a
+CI step or an editor-on-save hook wants. `--ast` and `--model` dump the parsed
+syntax tree and the checked model (resolved layouts, offsets, enum values)
+respectively.
 
 Both parse and type errors are reported with source spans; a schema with
 errors produces no output.
@@ -170,6 +199,13 @@ The conformance tests generate code with each backend from
 `tests/examples/commands.defs`, then run each generated module's own test
 suite (`tests/examples/*_conformance.*`) against the same hand-computed wire
 bytes, so a bug that makes one backend disagree with another fails the build.
+
+The Zephyr stack is tested the same way, against stub Zephyr headers in
+`tests/examples/zephyr_stub/` — enough of `BT_GATT_SERVICE_DEFINE` and friends
+to build the generated table and drive its ATT callbacks without a Zephyr
+checkout. The stubs expand to the same number of attributes the real macros
+do, so an attribute index the generator miscounted fails a test rather than
+notifying the wrong handle on a device.
 
 The browser playground lives in [`web/`](web/) and is built separately:
 

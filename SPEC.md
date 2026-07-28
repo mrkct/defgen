@@ -519,7 +519,13 @@ service HearingAidControl(uuid: "7d8f0000-...") {
   backend-specific and out of scope for the schema itself — each backend
   decides what idiomatic wrapper, if any, to generate around the
   underlying platform BLE library (CoreBluetooth, `BluetoothGatt`, BlueZ,
-  `bleak`, ...).
+  `bleak`, ...). The device's own side of the link is the same bindings
+  read in the server direction, and is generated per *BLE stack* (Zephyr,
+  NimBLE, ...) rather than per language, since a service table is C
+  whatever the apps talking to it are written in. Which permissions,
+  descriptors and callback shape that table gets is likewise the stack's
+  decision, not the schema's: §14 keeps security metadata out of v1, so a
+  generated table derives its permissions from `properties` alone.
 
 ## 11. Compile-time errors (non-exhaustive checklist)
 

@@ -7,8 +7,13 @@
 //!
 //! Adding a language means writing one module implementing [`Backend`] and
 //! adding it to [`all`]. Nothing else in the compiler, including the CLI's
-//! `--backend` flag, needs to change: the flag's accepted values, its help text
-//! and its "unknown backend" message all read from the registry below.
+//! `codec --language` flag, needs to change: the flag's accepted values, its
+//! help text and its "unknown language" message all read from the registry
+//! below.
+//!
+//! A backend targets a *language*. Firmware GATT server generation targets a
+//! *BLE stack* and lives in [`crate::stacks`], on its own registry and its own
+//! subcommand, because the two vary independently.
 
 pub mod c;
 pub mod java;
@@ -157,10 +162,10 @@ impl Options {
 
 /// A code generator for one target language.
 pub trait Backend {
-    /// The name `--backend` accepts. Lowercase, no spaces.
+    /// The name `codec --language` accepts. Lowercase, no spaces.
     fn name(&self) -> &'static str;
 
-    /// One line, for `--help` and the "unknown backend" message.
+    /// One line, for `--help` and the "unknown language" message.
     fn description(&self) -> &'static str;
 
     /// Generates source for `model`. Infallible: the model is already valid.
@@ -179,12 +184,12 @@ pub fn all() -> Vec<Box<dyn Backend>> {
     ]
 }
 
-/// The names `--backend` accepts.
+/// The names `codec --language` accepts.
 pub fn names() -> Vec<&'static str> {
     all().iter().map(|b| b.name()).collect()
 }
 
-/// Looks a backend up by the name `--backend` was given.
+/// Looks a backend up by the name `codec --language` was given.
 pub fn find(name: &str) -> Option<Box<dyn Backend>> {
     all().into_iter().find(|b| b.name() == name)
 }

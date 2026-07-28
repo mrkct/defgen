@@ -11,10 +11,19 @@
 //!    every cross-node rule in SPEC.md §11 (exact-fit widths, name resolution,
 //!    variable-length placement, duplicate ids) and resolving layouts.
 //!
-//! [`compile`] runs all three. Code generation is the fourth: a
-//! [`backends::Backend`] consumes a [`model::Model`] and emits source text.
-//! Backends are registered in [`backends::all`], which is what the CLI's
-//! `--backend` flag reads its accepted values from.
+//! [`compile`] runs all three. Code generation is the fourth, and it has two
+//! registries, because what a schema can be turned into varies along two
+//! independent axes:
+//!
+//! * a [`backends::Backend`] emits codecs for one target *language*, and is
+//!   what `defgen codec --language` selects;
+//! * a [`stacks::Stack`] emits a firmware GATT server for one *BLE stack* from
+//!   the same schema's §10 bindings, and is what `defgen server --stack`
+//!   selects.
+//!
+//! Both consume a [`model::Model`] and emit source text, and both read their
+//! accepted flag values straight from their registry, so adding either kind
+//! changes nothing in the CLI.
 
 pub mod ast;
 pub mod backends;
@@ -24,6 +33,7 @@ pub mod lexer;
 pub mod model;
 pub mod parser;
 pub mod span;
+pub mod stacks;
 
 pub use ast::Schema;
 pub use backends::{Backend, Generated, GeneratedFile};

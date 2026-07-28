@@ -117,7 +117,7 @@ unsafe fn str_arg<'a>(ptr: *const u8, len: usize) -> &'a str {
 
 /// The backends `defgen_compile` accepts, as
 /// `[{"name": …, "description": …}]` — the same registry, in the same order,
-/// that the CLI's `--backend` reads its accepted values from. The page builds
+/// that the CLI's `codec --language` reads its accepted values from. The page builds
 /// its backend picker from this rather than hard-coding a list that a new
 /// backend would silently leave out of date.
 #[unsafe(no_mangle)]
