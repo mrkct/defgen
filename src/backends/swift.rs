@@ -1970,7 +1970,11 @@ impl<'m> Emitter<'m> {
                     &format!("\"{label}: \\(count) elements exceeds the maximum of {max}\""),
                 );
                 self.line(2, "}");
-                self.line(2, &format!("{prop} = try (0..<count).map {{ i in"));
+                // Only `try` if the element decode can actually throw: Swift
+                // rejects a `try` with nothing throwing under it, and this
+                // backend builds with `-warnings-as-errors`.
+                let attempt = if self.unpack_throws(elem) { "try " } else { "" };
+                self.line(2, &format!("{prop} = {attempt}(0..<count).map {{ i in"));
                 self.line(
                     3,
                     &format!(

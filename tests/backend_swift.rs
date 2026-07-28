@@ -699,7 +699,30 @@ fn a_variable_length_array_tail_compiles() {
     // inside the element loop must actually be called `bits`, since `pack`
     // and `unpack_expr` always emit that literal identifier.
     assert!(!file.contains("elemBits"), "the per-element container must be named `bits`, not `elemBits`");
+    // A struct element's `unpackFixed` throws, so decoding the tail needs `try`.
+    assert_contains(&file, "readings = try (0..<count).map { i in");
     assert_compiles(&file, "var_array_tail");
+}
+
+#[test]
+fn a_tail_of_non_throwing_elements_is_decoded_without_try() {
+    // Swift rejects a `try` with nothing throwing under it, and this backend
+    // builds with `-warnings-as-errors` — so the tail loop has to ask whether
+    // the element decode can actually fail, the way a fixed array already does.
+    // A plain `uN` element cannot; neither can a `scaled` or an open enum.
+    let src = schema(
+        "struct Batch {\n\
+             kind: u8,\n\
+             values: u16[max: 8],\n\
+         }\n\
+         service S(uuid: \"180a\") {\n\
+             characteristic C(uuid: \"2a00\", properties: [read]): Batch;\n\
+         }",
+    );
+    let file = file_of(&src, "batch");
+    assert_contains(&file, "values = (0..<count).map { i in");
+    assert!(!file.contains("values = try (0..<count)"), "nothing under this `map` throws");
+    assert_compiles(&file, "var_array_tail_plain");
 }
 
 #[test]
