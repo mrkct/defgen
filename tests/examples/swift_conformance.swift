@@ -155,8 +155,7 @@ func testOpenEnum() throws {
 // ---------------------------------------------------------------------------
 
 func testEndianness() throws {
-    // LegacySerial carries #[endian(big)]: the flattened bit sequence is
-    // written from the far end of the buffer.
+    // LegacySerial carries #[endian(big)]: its one value reads MSB-first.
     let s = LegacySerial(serial: 0x0102_0304)
     let buf = try s.encode()
     checkBytes(buf, [0x01, 0x02, 0x03, 0x04], "LegacySerial is big-endian")
@@ -166,6 +165,52 @@ func testEndianness() throws {
     let statusBuf = try Status(activeProfile: 1).encode()
     check(statusBuf[0] == 0x01, "Status is little-endian: low bits land in byte 0")
     check(statusBuf[7] == 0x00, "Status is little-endian: byte 7 is untouched")
+}
+
+// A big-endian container with more than one field: they stay in declaration
+// order, first field in the first byte, and only the direction each multi-byte
+// value reads in changes (§8). The nested Orientation is flattened into this
+// container and picks up its byte order.
+func testBigEndianRecord() throws {
+    let r = LegacyReading(
+        id_: 0x11,
+        value: 0x2233,
+        orientation: Orientation(x: 1, y: -2, z: 3),
+        crc: 0x4455
+    )
+    let buf = try r.encode()
+    checkBytes(
+        buf,
+        [0x11, 0x22, 0x33, 0x01, 0xfe, 0x03, 0x44, 0x55],
+        "LegacyReading keeps its fields in declaration order"
+    )
+    check(try LegacyReading.decode(buf) == r, "LegacyReading round-trips")
+}
+
+// A fixed array and a variable-length tail in one big-endian container: both
+// keep their elements in declaration order, with byte order applying inside an
+// element and never across elements (§8).
+func testBigEndianSequences() throws {
+    let key: [UInt8] = [0xde, 0xad, 0xbe, 0xef]
+    // raw 100 = 0x0064, raw -200 = 0xff38
+    let log = LegacyLog(key: key, samples: [1.0, -2.0])
+    let buf = try log.encode()
+    checkBytes(
+        buf,
+        [0xde, 0xad, 0xbe, 0xef, 0x00, 0x64, 0xff, 0x38],
+        "LegacyLog keeps its array and tail elements in order"
+    )
+    let back = try LegacyLog.decode(buf)
+    check(back.key == key, "LegacyLog's fixed array round-trips")
+    check(try temperatureToRaw(back.samples[0]) == 100, "LegacyLog sample 0")
+    check(try temperatureToRaw(back.samples[1]) == -200, "LegacyLog sample 1")
+
+    // An empty tail is just the prefix (§6.3).
+    checkBytes(
+        try LegacyLog(key: key, samples: []).encode(),
+        [0xde, 0xad, 0xbe, 0xef],
+        "LegacyLog with no samples is its prefix alone"
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -187,7 +232,10 @@ func testTemperatureLog() throws {
 
     let back = try TemperatureLog.decode(buf)
     check(21.49 < back.samples[0] && back.samples[0] < 21.51, "samples[0] round-trips")
-    check(back.samples[1] < 0.0, "samples[1] is negative, i.e. sign-extended")
+    check(
+        try temperatureToRaw(back.samples[1]) == -1,
+        "samples[1] is sign-extended exactly once, i.e. raw -1 and not -65537"
+    )
     check(back.samples[3] > 327.66, "samples[3] round-trips")
 
     // The raw integer stays reachable, so a round trip need not go through
@@ -382,7 +430,7 @@ func testMetadata() throws {
     check(SERVICES == [HEARING_AID_CONTROL], "SERVICES lists every service")
     let service = SERVICES[0]
     check(service.name == "HearingAidControl", "the service keeps its schema name")
-    check(service.characteristics.count == 6, "with all six characteristics, in source order")
+    check(service.characteristics.count == 8, "with all eight characteristics, in source order")
 
     let statusChar = service.characteristics[0]
     check(statusChar.name == "StatusChar", "characteristics are in source order")
@@ -403,6 +451,8 @@ func main() throws {
     try testStatus()
     try testOpenEnum()
     try testEndianness()
+    try testBigEndianRecord()
+    try testBigEndianSequences()
     try testTemperatureLog()
     try testPadding()
     try testCommand()

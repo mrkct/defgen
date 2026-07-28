@@ -148,8 +148,7 @@ def test_open_enum() -> None:
 
 
 def test_endianness() -> None:
-    # LegacySerial carries #[endian(big)]: the flattened bit sequence is
-    # written from the far end of the buffer.
+    # LegacySerial carries #[endian(big)]: its one value reads MSB-first.
     s = m.LegacySerial(serial=0x01020304)
     buf = s.encode()
     check_bytes(buf, bytes([0x01, 0x02, 0x03, 0x04]), "LegacySerial is big-endian")
@@ -159,6 +158,55 @@ def test_endianness() -> None:
     buf = m.Status(active_profile=1).encode()
     check(buf[0] == 0x01, "Status is little-endian: low bits land in byte 0")
     check(buf[7] == 0x00, "Status is little-endian: byte 7 is untouched")
+
+
+def test_big_endian_record() -> None:
+    # A big-endian container with more than one field: they stay in
+    # declaration order, first field in the first byte, and only the
+    # direction each multi-byte value reads in changes (§8). The nested
+    # Orientation is flattened into this container and picks up its byte
+    # order.
+    r = m.LegacyReading(
+        id=0x11,
+        value=0x2233,
+        orientation=m.Orientation(x=1, y=-2, z=3),
+        crc=0x4455,
+    )
+    buf = r.encode()
+    check_bytes(
+        buf,
+        bytes([0x11, 0x22, 0x33, 0x01, 0xFE, 0x03, 0x44, 0x55]),
+        "LegacyReading keeps its fields in declaration order",
+    )
+    check(m.LegacyReading.decode(buf) == r, "LegacyReading round-trips")
+
+
+def test_big_endian_sequences() -> None:
+    # A fixed array and a variable-length tail in one big-endian container:
+    # both keep their elements in declaration order, with byte order applying
+    # inside an element and never across elements (§8).
+    log = m.LegacyLog(
+        key=[0xDE, 0xAD, 0xBE, 0xEF],
+        samples=[1.0, -2.0],  # raw 100 = 0x0064, raw -200 = 0xff38
+    )
+    buf = log.encode()
+    check_bytes(
+        buf,
+        bytes([0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x64, 0xFF, 0x38]),
+        "LegacyLog keeps its array and tail elements in order",
+    )
+    back = m.LegacyLog.decode(buf)
+    check(back.key == [0xDE, 0xAD, 0xBE, 0xEF], "LegacyLog's fixed array round-trips")
+    check(m.temperature_to_raw(back.samples[0]) == 100, "LegacyLog sample 0")
+    check(m.temperature_to_raw(back.samples[1]) == -200, "LegacyLog sample 1")
+
+    # An empty tail is just the prefix (§6.3).
+    empty = m.LegacyLog(key=[0xDE, 0xAD, 0xBE, 0xEF], samples=[])
+    check_bytes(
+        empty.encode(),
+        bytes([0xDE, 0xAD, 0xBE, 0xEF]),
+        "LegacyLog with no samples is its prefix alone",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +233,10 @@ def test_temperature_log() -> None:
 
     back = m.TemperatureLog.decode(buf)
     check(21.49 < back.samples[0] < 21.51, "samples[0] round-trips")
-    check(back.samples[1] < 0.0, "samples[1] is negative, i.e. sign-extended")
+    check(
+        m.temperature_to_raw(back.samples[1]) == -1,
+        "samples[1] is sign-extended exactly once, i.e. raw -1 and not -65537",
+    )
     check(back.samples[3] > 327.66, "samples[3] round-trips")
 
     # The raw integer stays reachable, so a round trip need not go through
@@ -458,7 +509,7 @@ def test_metadata() -> None:
     check(m.SERVICES == (m.HEARING_AID_CONTROL,), "SERVICES lists every service")
     service = m.SERVICES[0]
     check(service.name == "HearingAidControl", "the service keeps its schema name")
-    check(len(service.characteristics) == 6, "with all six characteristics, in source order")
+    check(len(service.characteristics) == 8, "with all eight characteristics, in source order")
 
     status_char = service.characteristics[0]
     check(status_char.name == "StatusChar", "characteristics are in source order")
@@ -541,6 +592,8 @@ def main() -> int:
     test_status()
     test_open_enum()
     test_endianness()
+    test_big_endian_record()
+    test_big_endian_sequences()
     test_temperature_log()
     test_rounding()
     test_padding()

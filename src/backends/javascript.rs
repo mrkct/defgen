@@ -72,12 +72,12 @@
 //!
 //! # Bit and byte order
 //!
-//! A container's bits live in a single `bigint`, LSB-first, which is exactly
-//! §6's packing rule and makes reading a field a shift and a mask — and a
-//! `bigint` has no width ceiling, so the 128-bit maximum (§2) needs no special
-//! case. Byte order (§8) then enters in one place only —
-//! `DefgenBits.fromBytes` / `toBytes` — because a big-endian container is the
-//! very same bit sequence read from the far end of the buffer. Nothing below an
+//! A container's bits live in a single `bigint`, which makes reading a field a
+//! shift and a mask — and a `bigint` has no width ceiling, so the 128-bit
+//! maximum (§2) needs no special case. Byte order (§8) enters in one place only
+//! — `DefgenBits.#shift`, which mirrors a value's declared offset for a
+//! big-endian container, since §6 has such a container filled from its
+//! most-significant end rather than its least-significant one. Nothing below an
 //! entry point decides byte order for itself: it is threaded down as an
 //! argument, as far as the variable-length tail, whose elements are each packed
 //! as their own byte-multiple unit under the same order.
@@ -618,7 +618,7 @@ impl<'m> Emitter<'m> {
         self.lines(
             0,
             &[
-                "// Codecs for this schema's GATT values: LSB-first bit packing (§6), with byte",
+                "// Codecs for this schema's GATT values: fields in declaration order (§6), with byte",
                 "// order applied once per root container (§8). Encoding produces a `Uint8Array`;",
                 "// decoding takes the bytes the transport delivered. Anything the schema does",
                 "// not allow throws a `DefgenError` subclass, rather than being quietly",
@@ -657,19 +657,27 @@ impl<'m> Emitter<'m> {
             0,
             &[
                 "/**",
-                " * A container's bits as one `bigint`, packed LSB-first from bit 0 (§6).",
+                " * A container of `size` bytes, held as one `bigint` while it is packed.",
                 " *",
                 " * A `bigint` has no width ceiling, so the 128-bit maximum a field may declare",
-                " * (§2) needs no special case. Byte order (§8) enters only where this meets",
-                " * bytes: a big-endian container is the very same bit sequence read from the far",
-                " * end of the buffer, so byte order is one argument to `fromBytes`/`toBytes`",
-                " * rather than something every field has to know about.",
+                " * (§2) needs no special case. Fields occupy the container in declaration",
+                " * order, first field first, and byte order (§8) chooses which end of it they",
+                " * fill from: little-endian from the least-significant end, big-endian from the",
+                " * most-significant one (§6). `#shift` is the whole of that difference.",
                 " */",
                 "class DefgenBits {",
-                "  /** @param {bigint} [value] */",
-                "  constructor(value = 0n) {",
+                "  /**",
+                "   * @param {number} size",
+                "   * @param {boolean} big",
+                "   * @param {bigint} [value]",
+                "   */",
+                "  constructor(size, big, value = 0n) {",
                 "    /** @type {bigint} */",
                 "    this.value = value;",
+                "    /** @type {number} */",
+                "    this.size = size;",
+                "    /** @type {boolean} */",
+                "    this.big = big;",
                 "  }",
                 "",
                 "  /**",
@@ -685,39 +693,48 @@ impl<'m> Emitter<'m> {
                 "      const index = big ? data.length - 1 - i : i;",
                 "      value |= BigInt(data[index]) << BigInt(8 * i);",
                 "    }",
-                "    return new DefgenBits(value);",
+                "    return new DefgenBits(data.length, big, value);",
                 "  }",
                 "",
                 "  /**",
-                "   * Exactly `size` bytes, written in the given byte order.",
+                "   * Exactly `size` bytes, written in the container's byte order.",
                 "   *",
-                "   * @param {number} size",
-                "   * @param {boolean} big",
                 "   * @returns {Uint8Array}",
                 "   */",
-                "  toBytes(size, big) {",
-                "    const out = new Uint8Array(size);",
+                "  toBytes() {",
+                "    const out = new Uint8Array(this.size);",
                 "    let rest = this.value;",
-                "    for (let i = 0; i < size; i++) {",
-                "      out[big ? size - 1 - i : i] = Number(rest & 0xffn);",
+                "    for (let i = 0; i < this.size; i++) {",
+                "      out[this.big ? this.size - 1 - i : i] = Number(rest & 0xffn);",
                 "      rest >>= 8n;",
                 "    }",
                 "    return out;",
                 "  }",
                 "",
                 "  /**",
-                "   * The `bits` bits starting at `off`.",
+                "   * Where a `bits`-wide value declared at `off` sits in `value`.",
+                "   *",
+                "   * @param {number} off",
+                "   * @param {number} bits",
+                "   * @returns {bigint}",
+                "   */",
+                "  #shift(off, bits) {",
+                "    return BigInt(this.big ? this.size * 8 - off - bits : off);",
+                "  }",
+                "",
+                "  /**",
+                "   * The `bits` bits of the value declared at `off`.",
                 "   *",
                 "   * @param {number} off",
                 "   * @param {number} bits",
                 "   * @returns {bigint}",
                 "   */",
                 "  get(off, bits) {",
-                "    return (this.value >> BigInt(off)) & ((1n << BigInt(bits)) - 1n);",
+                "    return (this.value >> this.#shift(off, bits)) & ((1n << BigInt(bits)) - 1n);",
                 "  }",
                 "",
                 "  /**",
-                "   * Writes the low `bits` bits of `value` at `off`.",
+                "   * Writes the low `bits` bits of `value` into the value declared at `off`.",
                 "   *",
                 "   * @param {number} off",
                 "   * @param {number} bits",
@@ -725,8 +742,9 @@ impl<'m> Emitter<'m> {
                 "   * @returns {void}",
                 "   */",
                 "  put(off, bits, value) {",
-                "    const mask = ((1n << BigInt(bits)) - 1n) << BigInt(off);",
-                "    this.value = (this.value & ~mask) | ((value << BigInt(off)) & mask);",
+                "    const shift = this.#shift(off, bits);",
+                "    const mask = ((1n << BigInt(bits)) - 1n) << shift;",
+                "    this.value = (this.value & ~mask) | ((value << shift) & mask);",
                 "  }",
                 "}",
             ],
@@ -1830,9 +1848,9 @@ impl<'m> Emitter<'m> {
         doc.push("@returns {Uint8Array}".to_string());
         self.block(1, &doc);
         self.line(1, "encode() {");
-        self.line(2, "const bits = new DefgenBits();");
+        self.line(2, &format!("const bits = new DefgenBits({size}, {big});"));
         self.line(2, "this._packFixed(bits, 0);");
-        let to_bytes = format!("bits.toBytes({size}, {big})");
+        let to_bytes = "bits.toBytes()".to_string();
         match max {
             None => self.line(2, &format!("return {to_bytes};")),
             Some(_) => {
@@ -1934,9 +1952,9 @@ impl<'m> Emitter<'m> {
                 ],
             );
             self.line(0, &format!("export function {encode}(value) {{"));
-            self.line(1, "const bits = new DefgenBits();");
+            self.line(1, &format!("const bits = new DefgenBits({size}, {big});"));
             self.pack(1, "value", &target, "0", &name, 0);
-            self.line(1, &format!("return bits.toBytes({size}, {big});"));
+            self.line(1, "return bits.toBytes();");
             self.line(0, "}");
             self.blank();
 
@@ -1987,9 +2005,9 @@ impl<'m> Emitter<'m> {
         self.line(0, &format!("export function {encode}(value) {{"));
         if size > 0 {
             self.needs.concat = true;
-            self.line(1, "const bits = new DefgenBits();");
+            self.line(1, &format!("const bits = new DefgenBits({size}, {big});"));
             self.pack(1, "value", &target, "0", &name, 0);
-            self.line(1, &format!("const prefix = bits.toBytes({size}, {big});"));
+            self.line(1, "const prefix = bits.toBytes();");
             let tail = self.pack_tail_body(1, &target, "value", &name, &big.to_string());
             self.line(1, &format!("return defgenConcat(prefix, {tail});"));
         } else {
@@ -2377,10 +2395,10 @@ impl<'m> Emitter<'m> {
                 self.line(ind, &format!("const items = defgenCheckMax({expr}, {max}, \"{label}\");"));
                 self.line(ind, &format!("const out = new Uint8Array(items.length * {bytes});"));
                 self.line(ind, "for (let i0 = 0; i0 < items.length; i0++) {");
-                self.line(ind + 1, "const bits = new DefgenBits();");
+                self.line(ind + 1, &format!("const bits = new DefgenBits({bytes}, {big});"));
                 let elem_ty = (**elem).clone();
                 self.pack(ind + 1, "items[i0]", &elem_ty, "0", label, 1);
-                self.line(ind + 1, &format!("out.set(bits.toBytes({bytes}, {big}), i0 * {bytes});"));
+                self.line(ind + 1, &format!("out.set(bits.toBytes(), i0 * {bytes});"));
                 self.line(ind, "}");
                 "out".to_string()
             }

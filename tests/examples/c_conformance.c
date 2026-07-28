@@ -146,8 +146,7 @@ static void test_endianness(void) {
     uint8_t sbuf[STATUS_SIZE];
     size_t len = 0;
 
-    /* LegacySerial carries #[endian(big)]: the flattened bit sequence is
-       written from the far end of the buffer. */
+    /* LegacySerial carries #[endian(big)]: its one value reads MSB-first. */
     s.serial = 0x01020304u;
     CHECK(legacy_serial_encode(&s, buf, sizeof(buf), &len) == DEFGEN_OK);
     CHECK_BYTES(buf, len, 0x01, 0x02, 0x03, 0x04);
@@ -160,6 +159,58 @@ static void test_endianness(void) {
     CHECK(status_encode(&status, sbuf, sizeof(sbuf), &len) == DEFGEN_OK);
     CHECK(sbuf[0] == 0x01);
     CHECK(sbuf[7] == 0x00);
+}
+
+/* A big-endian container with more than one field: they stay in declaration
+   order, first field in the first byte, and only the direction each
+   multi-byte value reads in changes (§8). The nested Orientation is
+   flattened into this container and picks up its byte order. */
+static void test_big_endian_record(void) {
+    LegacyReading r, back;
+    uint8_t buf[LEGACY_READING_SIZE];
+    size_t len = 0;
+
+    r.id = 0x11;
+    r.value = 0x2233;
+    r.orientation.x = 1;
+    r.orientation.y = -2;
+    r.orientation.z = 3;
+    r.crc = 0x4455;
+    CHECK(legacy_reading_encode(&r, buf, sizeof(buf), &len) == DEFGEN_OK);
+    CHECK_BYTES(buf, len, 0x11, 0x22, 0x33, 0x01, 0xfe, 0x03, 0x44, 0x55);
+    CHECK(legacy_reading_decode(&back, buf, len) == DEFGEN_OK);
+    CHECK(back.id == 0x11 && back.value == 0x2233 && back.crc == 0x4455);
+    CHECK(back.orientation.x == 1 && back.orientation.y == -2 && back.orientation.z == 3);
+}
+
+/* A fixed array and a variable-length tail in one big-endian container: both
+   keep their elements in declaration order, with byte order applying inside
+   an element and never across elements (§8). */
+static void test_big_endian_sequences(void) {
+    LegacyLog log, back;
+    uint8_t buf[LEGACY_LOG_MAX_SIZE];
+    size_t len = 0;
+    TemperatureRaw raw = 0;
+
+    log.key[0] = 0xde;
+    log.key[1] = 0xad;
+    log.key[2] = 0xbe;
+    log.key[3] = 0xef;
+    log.samples[0] = 1.0f;  /* raw 100 = 0x0064 */
+    log.samples[1] = -2.0f; /* raw -200 = 0xff38 */
+    log.samples_len = 2;
+    CHECK(legacy_log_encode(&log, buf, sizeof(buf), &len) == DEFGEN_OK);
+    CHECK_BYTES(buf, len, 0xde, 0xad, 0xbe, 0xef, 0x00, 0x64, 0xff, 0x38);
+    CHECK(legacy_log_decode(&back, buf, len) == DEFGEN_OK);
+    CHECK(back.key[0] == 0xde && back.key[3] == 0xef);
+    CHECK(back.samples_len == 2);
+    CHECK(temperature_to_raw(back.samples[0], &raw) == DEFGEN_OK && raw == 100);
+    CHECK(temperature_to_raw(back.samples[1], &raw) == DEFGEN_OK && raw == -200);
+
+    /* An empty tail is just the prefix (§6.3). */
+    log.samples_len = 0;
+    CHECK(legacy_log_encode(&log, buf, sizeof(buf), &len) == DEFGEN_OK);
+    CHECK_BYTES(buf, len, 0xde, 0xad, 0xbe, 0xef);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -182,7 +233,7 @@ static void test_temperature_log(void) {
 
     CHECK(temperature_log_decode(&back, buf, len) == DEFGEN_OK);
     CHECK(back.samples[0] > 21.49f && back.samples[0] < 21.51f);
-    CHECK(back.samples[1] < 0.0f);
+    CHECK(temperature_to_raw(back.samples[1], &raw) == DEFGEN_OK && raw == -1);
     CHECK(back.samples[3] > 327.66f);
 
     /* The raw integer stays reachable, so a round trip need not go through
@@ -466,6 +517,8 @@ int main(void) {
     test_status();
     test_open_enum();
     test_endianness();
+    test_big_endian_record();
+    test_big_endian_sequences();
     test_temperature_log();
     test_rounding();
     test_padding();

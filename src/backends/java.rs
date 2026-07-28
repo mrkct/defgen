@@ -75,13 +75,14 @@
 //!
 //! # Bit and byte order
 //!
-//! A container's bits live in one `BigInteger`, LSB-first from bit 0 — the same
-//! design as the Kotlin and Python backends, chosen for the same reason:
-//! `BigInteger` is exactly "an integer with no width ceiling", which is what a
-//! container up to 4096 bits (§6) needs, and it is already in the JDK. Byte
-//! order (§8) enters in one place only — `DefgenBits.fromBytes`/`toBytes` —
-//! because a big-endian container is the very same bit sequence read from the
-//! far end of the buffer. Every field, however narrow, is range-checked and
+//! A container's bits live in one `BigInteger` — the same design as the Kotlin
+//! and Python backends, chosen for the same reason: `BigInteger` is exactly "an
+//! integer with no width ceiling", which is what a container up to 4096 bits
+//! (§6) needs, and it is already in the JDK. Byte order (§8) enters in one place
+//! only — `DefgenBits.shift`, which mirrors a value's declared offset for a
+//! big-endian container, since §6 has such a container filled from its
+//! most-significant end rather than its least-significant one. Every field,
+//! however narrow, is range-checked and
 //! converted through `BigInteger`, which sidesteps every signed/unsigned
 //! conversion pitfall the JVM has, at the cost of a `BigInteger` per field
 //! access — a price this backend is happy to pay for never getting a
@@ -802,7 +803,7 @@ impl<'m> Emitter<'m> {
             0,
             &[
                 " *",
-                " * Codecs for this schema's GATT values: LSB-first bit packing (§6), with byte",
+                " * Codecs for this schema's GATT values: fields in declaration order (§6), with byte",
                 " * order applied once per root container (§8). Encoding produces a byte array;",
                 " * decoding takes the bytes the transport delivered. Anything the schema does not",
                 " * allow throws a DefgenError subclass, rather than being quietly truncated,",
@@ -895,13 +896,13 @@ impl<'m> Emitter<'m> {
             1,
             &[
                 "/**",
-                " * A container's bits as one arbitrary-width integer, packed LSB-first from bit 0",
-                " * (§6). The value is always non-negative.",
+                " * A container of `size` bytes, held as one arbitrary-width integer while it is",
+                " * packed. The value is always non-negative.",
                 " *",
-                " * Byte order (§8) enters only where this meets a byte array: a big-endian",
-                " * container is the very same bit sequence read from the far end of the buffer, so",
-                " * byte order is one argument to fromBytes/toBytes rather than something every",
-                " * field has to know about.",
+                " * Fields occupy the container in declaration order, first field first, and byte",
+                " * order (§8) chooses which end of it they fill from: little-endian from the",
+                " * least-significant end, big-endian from the most-significant one (§6). `shift`",
+                " * is the whole of that difference.",
                 " *",
                 " * Package-private, which is what makes every member that speaks in one internal:",
                 " * a caller outside this file's package cannot name the type, so it cannot call",
@@ -909,22 +910,27 @@ impl<'m> Emitter<'m> {
                 " */",
                 "static final class DefgenBits {",
                 "    private BigInteger value;",
+                "    private final int size;",
+                "    private final boolean big;",
                 "",
-                "    DefgenBits() {",
-                "        this.value = BigInteger.ZERO;",
+                "    DefgenBits(int size, boolean big) {",
+                "        this(BigInteger.ZERO, size, big);",
                 "    }",
                 "",
-                "    private DefgenBits(BigInteger value) {",
+                "    private DefgenBits(BigInteger value, int size, boolean big) {",
                 "        this.value = value;",
+                "        this.size = size;",
+                "        this.big = big;",
                 "    }",
                 "",
                 "    /** The bits of `data`, read in the given byte order. */",
                 "    static DefgenBits fromBytes(byte[] data, boolean big) {",
-                "        return new DefgenBits(new BigInteger(1, big ? data : reversed(data)));",
+                "        BigInteger value = new BigInteger(1, big ? data : reversed(data));",
+                "        return new DefgenBits(value, data.length, big);",
                 "    }",
                 "",
-                "    /** Exactly `size` bytes, written in the given byte order. */",
-                "    byte[] toBytes(int size, boolean big) {",
+                "    /** Exactly `size` bytes, written in the container's byte order. */",
+                "    byte[] toBytes() {",
                 "        byte[] magnitude = value.toByteArray();",
                 "        byte[] out = new byte[size];",
                 "        int copyLen = Math.min(magnitude.length, size);",
@@ -932,16 +938,22 @@ impl<'m> Emitter<'m> {
                 "        return big ? out : reversed(out);",
                 "    }",
                 "",
-                "    /** The `bits` bits starting at `off`. */",
-                "    BigInteger get(int off, int bits) {",
-                "        BigInteger mask = BigInteger.ONE.shiftLeft(bits).subtract(BigInteger.ONE);",
-                "        return value.shiftRight(off).and(mask);",
+                "    /** Where a `bits`-wide value declared at `off` sits in `value`. */",
+                "    private int shift(int off, int bits) {",
+                "        return big ? size * 8 - off - bits : off;",
                 "    }",
                 "",
-                "    /** Writes the low `bits` bits of `v` at `off`. */",
-                "    void put(int off, int bits, BigInteger v) {",
+                "    /** The `bits` bits of the value declared at `off`. */",
+                "    BigInteger get(int off, int bits) {",
                 "        BigInteger mask = BigInteger.ONE.shiftLeft(bits).subtract(BigInteger.ONE);",
-                "        value = value.andNot(mask.shiftLeft(off)).or(v.and(mask).shiftLeft(off));",
+                "        return value.shiftRight(shift(off, bits)).and(mask);",
+                "    }",
+                "",
+                "    /** Writes the low `bits` bits of `v` into the value declared at `off`. */",
+                "    void put(int off, int bits, BigInteger v) {",
+                "        int shift = shift(off, bits);",
+                "        BigInteger mask = BigInteger.ONE.shiftLeft(bits).subtract(BigInteger.ONE);",
+                "        value = value.andNot(mask.shiftLeft(shift)).or(v.and(mask).shiftLeft(shift));",
                 "    }",
                 "",
                 "    private static byte[] reversed(byte[] data) {",
@@ -1203,8 +1215,10 @@ impl<'m> Emitter<'m> {
 
         self.note(1, "Decodes the raw wire integer into the physical value (§4).");
         self.line(1, &format!("public static {physical} {fnp}FromRaw({raw_ty} raw) {{"));
+        // `raw` arrives as the carrier type, already sign-extended by the
+        // language for a signed one — sign-extending it again here would turn
+        // every negative raw into `raw - 2^raw_bits`.
         let as_bigint = to_bigint("raw", s.raw_bits, s.signed);
-        let as_bigint = if s.signed { format!("defgenSext({as_bigint}, {})", s.raw_bits) } else { as_bigint };
         self.line(
             2,
             &format!("double physical = {as_bigint}.doubleValue() * {prefix}_SCALE + {prefix}_OFFSET;"),
@@ -1428,9 +1442,9 @@ impl<'m> Emitter<'m> {
                 ),
             );
             self.line(2, "default byte[] encode() throws DefgenError {");
-            self.line(3, "DefgenBits bits = new DefgenBits();");
+            self.line(3, &format!("DefgenBits bits = new DefgenBits({size}, {big});"));
             self.line(3, "packFixed(bits, 0);");
-            self.line(3, &format!("return bits.toBytes({size}, {big});"));
+            self.line(3, "return bits.toBytes();");
             self.line(2, "}");
             self.blank();
 
@@ -1646,9 +1660,9 @@ impl<'m> Emitter<'m> {
                         ),
                     );
                     self.line(2, "public byte[] encode() throws DefgenError {");
-                    self.line(3, "DefgenBits bits = new DefgenBits();");
+                    self.line(3, &format!("DefgenBits bits = new DefgenBits({size}, {big});"));
                     self.line(3, "packFixed(bits, 0);");
-                    self.line(3, &format!("return bits.toBytes({size}, {big});"));
+                    self.line(3, "return bits.toBytes();");
                     self.line(2, "}");
                     self.blank();
 
@@ -1677,12 +1691,9 @@ impl<'m> Emitter<'m> {
                         ],
                     );
                     self.line(2, "public byte[] encode() throws DefgenError {");
-                    self.line(3, "DefgenBits bits = new DefgenBits();");
+                    self.line(3, &format!("DefgenBits bits = new DefgenBits(FIXED_SIZE, {big});"));
                     self.line(3, "packFixed(bits, 0);");
-                    self.line(
-                        3,
-                        &format!("return defgenConcat(bits.toBytes(FIXED_SIZE, {big}), packTail({big}));"),
-                    );
+                    self.line(3, &format!("return defgenConcat(bits.toBytes(), packTail({big}));"));
                     self.line(2, "}");
                     self.blank();
 
@@ -1882,9 +1893,9 @@ impl<'m> Emitter<'m> {
                 1,
                 &format!("public static byte[] encode{name}({java_ty} value) throws DefgenError {{"),
             );
-            self.line(2, "DefgenBits bits = new DefgenBits();");
+            self.line(2, &format!("DefgenBits bits = new DefgenBits({size}, {big});"));
             self.pack(2, "value", &target, "0", &def.name);
-            self.line(2, &format!("return bits.toBytes({size}, {big});"));
+            self.line(2, "return bits.toBytes();");
             self.line(1, "}");
             self.blank();
 
@@ -1922,9 +1933,9 @@ impl<'m> Emitter<'m> {
         );
         self.line(1, &format!("public static byte[] encode{name}({java_ty} value) throws DefgenError {{"));
         if size > 0 {
-            self.line(2, "DefgenBits bits = new DefgenBits();");
+            self.line(2, &format!("DefgenBits bits = new DefgenBits({size}, {big});"));
             self.pack(2, "value", &target, "0", &def.name);
-            self.line(2, &format!("byte[] prefix = bits.toBytes({size}, {big});"));
+            self.line(2, "byte[] prefix = bits.toBytes();");
             let tail = self.pack_tail_body(2, &target, "value", &def.name, big);
             self.line(2, &format!("return defgenConcat(prefix, {tail});"));
         } else {
@@ -2315,12 +2326,12 @@ impl<'m> Emitter<'m> {
                 );
                 self.line(ind, &format!("byte[] out = new byte[elems.size() * {bytes}];"));
                 self.line(ind, "for (int i = 0; i < elems.size(); i++) {");
-                self.line(ind + 1, "DefgenBits bits = new DefgenBits();");
+                self.line(ind + 1, &format!("DefgenBits bits = new DefgenBits({bytes}, {big});"));
                 let elem_ty = (**elem).clone();
                 self.pack(ind + 1, "elems.get(i)", &elem_ty, "0", label);
                 self.line(
                     ind + 1,
-                    &format!("System.arraycopy(bits.toBytes({bytes}, {big}), 0, out, i * {bytes}, {bytes});"),
+                    &format!("System.arraycopy(bits.toBytes(), 0, out, i * {bytes}, {bytes});"),
                 );
                 self.line(ind, "}");
                 "out".to_string()

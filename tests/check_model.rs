@@ -285,7 +285,16 @@ fn root_and_nested_use_are_tracked() {
     let roots: Vec<&str> = model.roots().map(|t| t.name.as_str()).collect();
     assert_eq!(
         roots,
-        vec!["OwnerName", "Status", "TemperatureLog", "LegacySerial", "DiagnosticLabel", "Command"]
+        vec![
+            "OwnerName",
+            "Status",
+            "TemperatureLog",
+            "LegacySerial",
+            "LegacyReading",
+            "LegacyLog",
+            "DiagnosticLabel",
+            "Command"
+        ]
     );
 
     // `Orientation` is only ever embedded — which is exactly why it may not
@@ -306,7 +315,7 @@ fn characteristics_resolve_to_their_types_sizes_and_byte_order() {
     let service = &model.services[0];
     assert_eq!(service.name, "HearingAidControl");
     assert_eq!(service.uuid, "7d8f0000-3c1a-4e8a-9b5a-000000000000");
-    assert_eq!(service.characteristics.len(), 6);
+    assert_eq!(service.characteristics.len(), 8);
 
     let status = &service.characteristics[0];
     assert_eq!(status.name, "StatusChar");

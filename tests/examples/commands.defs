@@ -88,6 +88,31 @@ struct LegacySerial: u32 {
     serial: u32,
 }
 
+/// The same firmware's multi-field big-endian record. `LegacySerial` above
+/// is one scalar filling its container, which is the one shape every byte
+/// order convention agrees on; this one pins down the rest of §8 — fields
+/// stay in declaration order, only the direction each multi-byte value
+/// reads in changes, and a nested `Orientation` is flattened into this
+/// container and picks up its byte order rather than keeping its own.
+#[endian(big)]
+struct LegacyReading: u64 {
+    id: u8,
+    value: u16,
+    orientation: Orientation,
+    crc: u16,
+}
+
+/// Big-endian variable-length record: a fixed array in the fixed prefix,
+/// then a tail of multi-byte elements. Both keep their elements in
+/// declaration order — byte order applies within an element, never across
+/// them — so `Type[N]` and `Type[max: N]` lay the same elements out the
+/// same way (§8).
+#[endian(big)]
+struct LegacyLog {
+    key: u8[4],
+    samples: Temperature[max: 4],
+}
+
 /// Free-form diagnostic note a technician can attach during pairing.
 /// Demonstrates fixed fields followed by trailing variable-length data:
 /// the struct's own size varies with `label`, so it deliberately has no
@@ -145,4 +170,14 @@ service HearingAidControl(uuid: "7d8f0000-3c1a-4e8a-9b5a-000000000000") {
         uuid: "7d8f0006-3c1a-4e8a-9b5a-000000000000",
         properties: [read, write],
     ): DiagnosticLabel;
+
+    characteristic LegacyReadingChar(
+        uuid: "7d8f0007-3c1a-4e8a-9b5a-000000000000",
+        properties: [read],
+    ): LegacyReading;
+
+    characteristic LegacyLogChar(
+        uuid: "7d8f0008-3c1a-4e8a-9b5a-000000000000",
+        properties: [read],
+    ): LegacyLog;
 }

@@ -64,13 +64,14 @@
 //!
 //! # Bit and byte order
 //!
-//! A container's bits live in one `BigInteger`, LSB-first from bit 0 — the
-//! same design as the Python backend's `_Bits`, chosen for the same reason:
-//! `BigInteger` is exactly "an integer with no width ceiling", which is what a
-//! container up to 4096 bits (§6) needs, and it is already on the classpath.
-//! Byte order (§8) enters in one place only — `DefgenBits.fromBytes`/`toBytes`
-//! — because a big-endian container is exactly the same bit sequence read
-//! from the far end of the buffer. A scalar field narrower than its carrier
+//! A container's bits live in one `BigInteger` — the same design as the Python
+//! backend's `_Bits`, chosen for the same reason: `BigInteger` is exactly "an
+//! integer with no width ceiling", which is what a container up to 4096 bits
+//! (§6) needs, and it is already on the classpath. Byte order (§8) enters in
+//! one place only — `DefgenBits.shift`, which mirrors a value's declared
+//! offset for a big-endian container, since §6 has such a container filled
+//! from its most-significant end rather than its least-significant one. A
+//! scalar field narrower than its carrier
 //! (a `u12` in a `UShort`) is range-checked and converted through
 //! `BigInteger` too, which sidesteps every JVM signed/unsigned conversion
 //! pitfall at the cost of a `BigInteger` per field access — a price this
@@ -672,7 +673,7 @@ impl<'m> Emitter<'m> {
             0,
             &[
                 " *",
-                " * Codecs for this schema's GATT values: LSB-first bit packing (§6), with byte",
+                " * Codecs for this schema's GATT values: fields in declaration order (§6), with byte",
                 " * order applied once per root container (§8). Encoding produces a `ByteArray`;",
                 " * decoding takes the bytes the transport delivered. Anything the schema does",
                 " * not allow throws a `DefgenError` subclass, rather than being quietly",
@@ -719,25 +720,29 @@ impl<'m> Emitter<'m> {
             0,
             &[
                 "/**",
-                " * A container's bits as one arbitrary-width integer, packed LSB-first from bit",
-                " * 0 (§6). `value` is always non-negative.",
+                " * A container of `size` bytes, held as one arbitrary-width integer while it",
+                " * is packed. `value` is always non-negative.",
                 " *",
-                " * Byte order (§8) enters only where this meets a `ByteArray`: a big-endian",
-                " * container is the very same bit sequence read from the far end of the buffer,",
-                " * so byte order is one argument to `fromBytes`/`toBytes` rather than something",
-                " * every field has to know about.",
+                " * Fields occupy the container in declaration order, first field first, and",
+                " * byte order (§8) chooses which end of it they fill from: little-endian from",
+                " * the least-significant end, big-endian from the most-significant one (§6).",
+                " * `shift` is the whole of that difference.",
                 " */",
-                "internal class DefgenBits(var value: BigInteger = BigInteger.ZERO) {",
+                "internal class DefgenBits(",
+                "    private val size: Int,",
+                "    private val big: Boolean,",
+                "    var value: BigInteger = BigInteger.ZERO,",
+                ") {",
                 "    companion object {",
                 "        /** The bits of `data`, read in the given byte order. */",
                 "        fun fromBytes(data: ByteArray, big: Boolean): DefgenBits {",
                 "            val bytes = if (big) data else data.reversedArray()",
-                "            return DefgenBits(BigInteger(1, bytes))",
+                "            return DefgenBits(data.size, big, BigInteger(1, bytes))",
                 "        }",
                 "    }",
                 "",
-                "    /** Exactly `size` bytes, written in the given byte order. */",
-                "    fun toBytes(size: Int, big: Boolean): ByteArray {",
+                "    /** Exactly `size` bytes, written in the container's byte order. */",
+                "    fun toBytes(): ByteArray {",
                 "        val magnitude = value.toByteArray()",
                 "        val out = ByteArray(size)",
                 "        val copyLen = minOf(magnitude.size, size)",
@@ -745,16 +750,20 @@ impl<'m> Emitter<'m> {
                 "        return if (big) out else out.reversedArray()",
                 "    }",
                 "",
-                "    /** The `bits` bits starting at `off`. */",
+                "    /** Where a `bits`-wide value declared at `off` sits in `value`. */",
+                "    private fun shift(off: Int, bits: Int): Int = if (big) size * 8 - off - bits else off",
+                "",
+                "    /** The `bits` bits of the value declared at `off`. */",
                 "    fun get(off: Int, bits: Int): BigInteger {",
                 "        val mask = BigInteger.ONE.shiftLeft(bits).subtract(BigInteger.ONE)",
-                "        return value.shiftRight(off).and(mask)",
+                "        return value.shiftRight(shift(off, bits)).and(mask)",
                 "    }",
                 "",
-                "    /** Writes the low `bits` bits of `v` at `off`. */",
+                "    /** Writes the low `bits` bits of `v` into the value declared at `off`. */",
                 "    fun put(off: Int, bits: Int, v: BigInteger) {",
+                "        val shift = shift(off, bits)",
                 "        val mask = BigInteger.ONE.shiftLeft(bits).subtract(BigInteger.ONE)",
-                "        value = value.andNot(mask.shiftLeft(off)).or(v.and(mask).shiftLeft(off))",
+                "        value = value.andNot(mask.shiftLeft(shift)).or(v.and(mask).shiftLeft(shift))",
                 "    }",
                 "}",
                 "",
@@ -965,8 +974,10 @@ impl<'m> Emitter<'m> {
 
         self.note(0, "Decodes the raw wire integer into the physical value (§4).");
         self.line(0, &format!("fun {fnp}FromRaw(raw: {raw_ty}): {name} {{"));
+        // `raw` arrives as the carrier type, already sign-extended by the
+        // language for a signed one — sign-extending it again here would turn
+        // every negative raw into `raw - 2^raw_bits`.
         let as_bigint = to_bigint("raw", s.raw_bits, s.signed);
-        let as_bigint = if s.signed { format!("defgenSext({as_bigint}, {})", s.raw_bits) } else { as_bigint };
         self.line(1, &format!("val physical = {as_bigint}.toDouble() * {prefix}_SCALE + {prefix}_OFFSET"));
         let cast = if s.physical == FloatType::F32 { ".toFloat()" } else { "" };
         self.line(1, &format!("return physical{cast}"));
@@ -1140,9 +1151,9 @@ impl<'m> Emitter<'m> {
                 ),
             );
             self.line(1, "fun encode(): ByteArray {");
-            self.line(2, "val bits = DefgenBits()");
+            self.line(2, &format!("val bits = DefgenBits({size}, big = {big})"));
             self.line(2, "packFixed(bits, 0)");
-            self.line(2, &format!("return bits.toBytes({size}, big = {big})"));
+            self.line(2, "return bits.toBytes()");
             self.line(1, "}");
             self.blank();
         }
@@ -1495,9 +1506,9 @@ impl<'m> Emitter<'m> {
                         ),
                     );
                     self.line(1, "fun encode(): ByteArray {");
-                    self.line(2, "val bits = DefgenBits()");
+                    self.line(2, &format!("val bits = DefgenBits({size}, big = {big})"));
                     self.line(2, "packFixed(bits, 0)");
-                    self.line(2, &format!("return bits.toBytes({size}, big = {big})"));
+                    self.line(2, "return bits.toBytes()");
                     self.line(1, "}");
                 }
                 Some(_) => {
@@ -1512,9 +1523,9 @@ impl<'m> Emitter<'m> {
                         ],
                     );
                     self.line(1, "fun encode(): ByteArray {");
-                    self.line(2, "val bits = DefgenBits()");
+                    self.line(2, &format!("val bits = DefgenBits({size}, big = {big})"));
                     self.line(2, "packFixed(bits, 0)");
-                    self.line(2, &format!("val prefix = bits.toBytes({size}, big = {big})"));
+                    self.line(2, "val prefix = bits.toBytes()");
                     self.line(2, &format!("return prefix + packTail({big})"));
                     self.line(1, "}");
                     self.blank();
@@ -1610,9 +1621,9 @@ impl<'m> Emitter<'m> {
 
             self.note(0, &format!("Encodes a `{}` into exactly {size} bytes, {order}-endian.", def.name));
             self.line(0, &format!("fun encode{name}(value: {kt_ty}): ByteArray {{"));
-            self.line(1, "val bits = DefgenBits()");
+            self.line(1, &format!("val bits = DefgenBits({size}, big = {big})"));
             self.pack(1, "value", &target, "0", &def.name);
-            self.line(1, &format!("return bits.toBytes({size}, big = {big})"));
+            self.line(1, "return bits.toBytes()");
             self.line(0, "}");
             self.blank();
 
@@ -1649,9 +1660,9 @@ impl<'m> Emitter<'m> {
             ],
         );
         self.line(0, &format!("fun encode{name}(value: {kt_ty}): ByteArray {{"));
-        self.line(1, "val bits = DefgenBits()");
+        self.line(1, &format!("val bits = DefgenBits({size}, big = {big})"));
         self.pack(1, "value", &target, "0", &def.name);
-        self.line(1, &format!("val prefix = bits.toBytes({size}, big = {big})"));
+        self.line(1, "val prefix = bits.toBytes()");
         let tail = self.pack_tail_body(1, &target, "value", &def.name, kt_bool(big));
         self.line(1, &format!("return prefix + {tail}"));
         self.line(0, "}");
@@ -1967,10 +1978,10 @@ impl<'m> Emitter<'m> {
                 let bytes = u64::from(self.m.layout_of(elem).fixed_bits) / 8;
                 self.line(ind, "val out = java.io.ByteArrayOutputStream()");
                 self.line(ind, &format!("for (elemVal in defgenCheckMax({prop}, {max}, \"{label}\")) {{"));
-                self.line(ind + 1, "val bits = DefgenBits()");
+                self.line(ind + 1, &format!("val bits = DefgenBits({bytes}, big = {big})"));
                 let elem_ty = (**elem).clone();
                 self.pack(ind + 1, "elemVal", &elem_ty, "0", label);
-                self.line(ind + 1, &format!("out.write(bits.toBytes({bytes}, big = {big}))"));
+                self.line(ind + 1, "out.write(bits.toBytes())");
                 self.line(ind, "}");
                 "out.toByteArray()".to_string()
             }

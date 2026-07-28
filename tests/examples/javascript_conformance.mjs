@@ -174,8 +174,7 @@ function testOpenEnum() {
 // ---------------------------------------------------------------------------
 
 function testEndianness() {
-  // LegacySerial carries #[endian(big)]: the flattened bit sequence is
-  // written from the far end of the buffer.
+  // LegacySerial carries #[endian(big)]: its one value reads MSB-first.
   const s = new m.LegacySerial({ serial: 0x01020304 });
   const buf = s.encode();
   checkBytes(buf, [0x01, 0x02, 0x03, 0x04], "LegacySerial is big-endian");
@@ -185,6 +184,55 @@ function testEndianness() {
   const status = new m.Status({ activeProfile: 1 }).encode();
   check(status[0] === 0x01, "Status is little-endian: low bits land in byte 0");
   check(status[7] === 0x00, "Status is little-endian: byte 7 is untouched");
+}
+
+// A big-endian container with more than one field: they stay in declaration
+// order, first field in the first byte, and only the direction each multi-byte
+// value reads in changes (§8). The nested Orientation is flattened into this
+// container and picks up its byte order.
+function testBigEndianRecord() {
+  const r = new m.LegacyReading({
+    id: 0x11,
+    value: 0x2233,
+    orientation: new m.Orientation({ x: 1, y: -2, z: 3 }),
+    crc: 0x4455,
+  });
+  const buf = r.encode();
+  checkBytes(
+    buf,
+    [0x11, 0x22, 0x33, 0x01, 0xfe, 0x03, 0x44, 0x55],
+    "LegacyReading keeps its fields in declaration order",
+  );
+  const back = m.LegacyReading.decode(buf);
+  check(back.id === 0x11 && back.value === 0x2233 && back.crc === 0x4455, "LegacyReading scalars");
+  check(
+    back.orientation.x === 1 && back.orientation.y === -2 && back.orientation.z === 3,
+    "LegacyReading's nested struct round-trips",
+  );
+}
+
+// A fixed array and a variable-length tail in one big-endian container: both
+// keep their elements in declaration order, with byte order applying inside an
+// element and never across elements (§8).
+function testBigEndianSequences() {
+  const log = new m.LegacyLog({
+    key: [0xde, 0xad, 0xbe, 0xef],
+    samples: [1.0, -2.0], // raw 100 = 0x0064, raw -200 = 0xff38
+  });
+  const buf = log.encode();
+  checkBytes(
+    buf,
+    [0xde, 0xad, 0xbe, 0xef, 0x00, 0x64, 0xff, 0x38],
+    "LegacyLog keeps its array and tail elements in order",
+  );
+  const back = m.LegacyLog.decode(buf);
+  checkBytes(Uint8Array.from(back.key), [0xde, 0xad, 0xbe, 0xef], "LegacyLog's fixed array");
+  check(m.temperatureToRaw(back.samples[0]) === 100, "LegacyLog sample 0");
+  check(m.temperatureToRaw(back.samples[1]) === -200, "LegacyLog sample 1");
+
+  // An empty tail is just the prefix (§6.3).
+  const empty = new m.LegacyLog({ key: [0xde, 0xad, 0xbe, 0xef], samples: [] });
+  checkBytes(empty.encode(), [0xde, 0xad, 0xbe, 0xef], "LegacyLog with no samples");
 }
 
 // ---------------------------------------------------------------------------
@@ -206,7 +254,10 @@ function testTemperatureLog() {
 
   const back = m.TemperatureLog.decode(buf);
   check(21.49 < back.samples[0] && back.samples[0] < 21.51, "samples[0] round-trips");
-  check(back.samples[1] < 0.0, "samples[1] is negative, i.e. sign-extended");
+  check(
+    m.temperatureToRaw(back.samples[1]) === -1,
+    "samples[1] is sign-extended exactly once, i.e. raw -1 and not -65537",
+  );
   check(back.samples[3] > 327.66, "samples[3] round-trips");
 
   // The raw integer stays reachable, so a round trip need not go through
@@ -442,7 +493,7 @@ function testMetadata() {
   const service = m.SERVICES[0];
   check(service === m.HEARING_AID_CONTROL, "by the same object the module exports");
   check(service.name === "HearingAidControl", "the service keeps its schema name");
-  check(service.characteristics.length === 6, "with all six characteristics, in source order");
+  check(service.characteristics.length === 8, "with all eight characteristics, in source order");
   check(Object.isFrozen(service), "and is frozen");
 
   const statusChar = service.characteristics[0];
@@ -471,6 +522,8 @@ function main() {
   testStatus();
   testOpenEnum();
   testEndianness();
+  testBigEndianRecord();
+  testBigEndianSequences();
   testTemperatureLog();
   testCommand();
   testCommandUnknown();

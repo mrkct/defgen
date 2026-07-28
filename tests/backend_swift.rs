@@ -567,6 +567,10 @@ fn byte_order_is_resolved_per_root_container() {
     assert_contains(&type_body(&file, "Status"), "DefgenBits(size: 8, big: false)");
     assert_contains(&type_body(&file, "LegacySerial"), "DefgenBits(size: 4, big: true)");
     assert_contains(&type_body(&file, "LegacySerial"), "DefgenBits(data: data, big: true)");
+
+    // The mirror is what makes a big-endian container fill from its
+    // most-significant end while its fields stay in declaration order (§6).
+    assert_contains(&file, "big ? (bytes.count * 8 - off - bits) : off");
 }
 
 #[test]

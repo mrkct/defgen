@@ -804,10 +804,14 @@ fn byte_order_is_resolved_per_root_container() {
     // §8: the file default, and the one struct that overrides it. Byte order
     // reaches the wire in exactly one place — where the bits meet bytes.
     let module = example_module();
-    assert_contains(&class_body(&module, "Status"), "return bits.toBytes(8, false);");
-    assert_contains(&class_body(&module, "LegacySerial"), "return bits.toBytes(4, true);");
+    assert_contains(&class_body(&module, "Status"), "const bits = new DefgenBits(8, false);");
+    assert_contains(&class_body(&module, "LegacySerial"), "const bits = new DefgenBits(4, true);");
     assert_contains(&class_body(&module, "LegacySerial"), "DefgenBits.fromBytes(data, true)");
     assert_contains(&module, "      const index = big ? data.length - 1 - i : i;");
+
+    // The mirror is what makes a big-endian container fill from its
+    // most-significant end while its fields stay in declaration order (§6).
+    assert_contains(&module, "return BigInt(this.big ? this.size * 8 - off - bits : off);");
 }
 
 #[test]
@@ -1007,7 +1011,8 @@ fn a_big_endian_variable_length_root_reaches_its_tail() {
     );
     let module = module_of(&src, "note");
     let body = class_body(&module, "Note");
-    assert_contains(&body, "return defgenConcat(bits.toBytes(2, true), this._packTail(true));");
+    assert_contains(&body, "const bits = new DefgenBits(2, true);");
+    assert_contains(&body, "return defgenConcat(bits.toBytes(), this._packTail(true));");
     assert_contains(&body, "DefgenBits.fromBytes(data.subarray(0, Note.FIXED_SIZE), true)");
     assert_contains(&body, "value._unpackTail(data.subarray(Note.FIXED_SIZE), true);");
     assert_valid(&module, "big_endian_var");

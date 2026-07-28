@@ -55,11 +55,11 @@
 //!
 //! # Bit and byte order
 //!
-//! A container's bits live in a single `int`, LSB-first, which is exactly §6's
-//! packing rule and makes reading a field a shift and a mask. Byte order (§8)
-//! then enters in one place only — `_Bits.from_bytes` / `_Bits.to_bytes` —
-//! because a big-endian container is the very same bit sequence read from the
-//! far end of the buffer. Nothing below an entry point decides byte order for
+//! A container's bits live in a single `int`, which makes reading a field a
+//! shift and a mask. Byte order (§8) enters in one place only — `_Bits._shift`,
+//! which mirrors a value's declared offset for a big-endian container, since
+//! §6 has such a container filled from its most-significant end rather than its
+//! least-significant one. Nothing below an entry point decides byte order for
 //! itself: it is threaded down as an argument, as far as the variable-length
 //! tail, whose elements are each packed as their own byte-multiple unit under
 //! the same order.
@@ -584,8 +584,8 @@ impl<'m> Emitter<'m> {
         self.lines(
             0,
             &[
-                "Codecs for this schema's GATT values: LSB-first bit packing (§6), with byte",
-                "order applied once per root container (§8). Encoding produces `bytes`;",
+                "Codecs for this schema's GATT values: fields in declaration order (§6),",
+                "with byte order applied once per root container (§8). Encoding produces `bytes`;",
                 "decoding takes the bytes the transport delivered. Anything the schema does",
                 "not allow raises a `DefgenError` subclass, rather than being quietly",
                 "truncated, wrapped or replaced.",
@@ -724,38 +724,49 @@ impl<'m> Emitter<'m> {
             0,
             &[
                 "class _Bits:",
-                "    \"\"\"A container's bits as one integer, packed LSB-first from bit 0 (§6).",
+                "    \"\"\"A container of `size` bytes, held as one integer while it is packed.",
                 "",
-                "    Byte order (§8) enters only where this meets `bytes`: a big-endian",
-                "    container is the very same bit sequence read from the far end of the",
-                "    buffer, so byte order is one argument to `from_bytes`/`to_bytes` rather",
-                "    than something every field has to know about.",
+                "    Fields occupy the container in declaration order, first field first, and",
+                "    byte order (§8) chooses which end of it they fill from: little-endian",
+                "    from the least-significant end, big-endian from the most-significant one",
+                "    (§6). `_shift` is the whole of that difference — every field is written",
+                "    the same way otherwise, and the container is handed to `int.to_bytes` in",
+                "    its own byte order at the end.",
                 "    \"\"\"",
                 "",
-                "    __slots__ = (\"value\",)",
+                "    __slots__ = (\"value\", \"size\", \"big\")",
                 "",
                 "    value: int",
+                "    size: int",
+                "    big: bool",
                 "",
-                "    def __init__(self, value: int = 0) -> None:",
+                "    def __init__(self, size: int, big: bool, value: int = 0) -> None:",
                 "        self.value = value",
+                "        self.size = size",
+                "        self.big = big",
                 "",
                 "    @classmethod",
                 "    def from_bytes(cls, data: bytes, big: bool) -> _Bits:",
                 "        \"\"\"The bits of `data`, read in the given byte order.\"\"\"",
-                "        return cls(int.from_bytes(data, \"big\" if big else \"little\"))",
+                "        return cls(len(data), big, int.from_bytes(data, \"big\" if big else \"little\"))",
                 "",
-                "    def to_bytes(self, size: int, big: bool) -> bytes:",
-                "        \"\"\"Exactly `size` bytes, written in the given byte order.\"\"\"",
-                "        return self.value.to_bytes(size, \"big\" if big else \"little\")",
+                "    def to_bytes(self) -> bytes:",
+                "        \"\"\"Exactly `size` bytes, written in the container's byte order.\"\"\"",
+                "        return self.value.to_bytes(self.size, \"big\" if self.big else \"little\")",
+                "",
+                "    def _shift(self, off: int, bits: int) -> int:",
+                "        \"\"\"Where a `bits`-wide value declared at `off` sits in `value`.\"\"\"",
+                "        return self.size * 8 - off - bits if self.big else off",
                 "",
                 "    def get(self, off: int, bits: int) -> int:",
-                "        \"\"\"The `bits` bits starting at `off`.\"\"\"",
-                "        return (self.value >> off) & ((1 << bits) - 1)",
+                "        \"\"\"The `bits` bits of the value declared at `off`.\"\"\"",
+                "        return (self.value >> self._shift(off, bits)) & ((1 << bits) - 1)",
                 "",
                 "    def put(self, off: int, bits: int, value: int) -> None:",
-                "        \"\"\"Writes the low `bits` bits of `value` at `off`.\"\"\"",
-                "        mask = ((1 << bits) - 1) << off",
-                "        self.value = (self.value & ~mask) | ((value << off) & mask)",
+                "        \"\"\"Writes the low `bits` bits of `value` into the value at `off`.\"\"\"",
+                "        shift = self._shift(off, bits)",
+                "        mask = ((1 << bits) - 1) << shift",
+                "        self.value = (self.value & ~mask) | ((value << shift) & mask)",
                 "",
                 "",
                 "def _sext(value: int, bits: int) -> int:",
@@ -1454,9 +1465,9 @@ impl<'m> Emitter<'m> {
                 );
             }
         }
-        self.line(2, "_bits = _Bits()");
+        self.line(2, &format!("_bits = _Bits({size}, big={})", py_bool(big)));
         self.line(2, "self._pack_fixed(_bits, 0)");
-        let to_bytes = format!("_bits.to_bytes({size}, big={})", py_bool(big));
+        let to_bytes = "_bits.to_bytes()".to_string();
         match max {
             None => self.line(2, &format!("return {to_bytes}")),
             Some(_) => self.line(2, &format!("return {to_bytes} + self._pack_tail({})", py_bool(big))),
@@ -1536,9 +1547,9 @@ impl<'m> Emitter<'m> {
 
             self.line(0, &format!("def encode_{fnp}(value: {ty}) -> bytes:"));
             self.note(1, &format!("Encodes a `{name}` into exactly {size} bytes, {order}-endian."));
-            self.line(1, "_bits = _Bits()");
+            self.line(1, &format!("_bits = _Bits({size}, big={})", py_bool(big)));
             self.pack(1, "value", &target, "0", &name, 0);
-            self.line(1, &format!("return _bits.to_bytes({size}, big={})", py_bool(big)));
+            self.line(1, "return _bits.to_bytes()");
             self.gap();
 
             self.line(0, &format!("def decode_{fnp}(data: bytes) -> {ty}:"));
@@ -1573,9 +1584,9 @@ impl<'m> Emitter<'m> {
             ],
         );
         if size > 0 {
-            self.line(1, "_bits = _Bits()");
+            self.line(1, &format!("_bits = _Bits({size}, big={})", py_bool(big)));
             self.pack(1, "value", &target, "0", &name, 0);
-            self.line(1, &format!("_prefix = _bits.to_bytes({size}, big={})", py_bool(big)));
+            self.line(1, "_prefix = _bits.to_bytes()");
         } else {
             self.line(1, "_prefix = b\"\"");
         }
@@ -1862,10 +1873,10 @@ impl<'m> Emitter<'m> {
                 let bytes = u64::from(self.m.layout_of(elem).fixed_bits) / 8;
                 self.line(ind, "_out = bytearray()");
                 self.line(ind, &format!("for _v0 in _check_max({expr}, {max}, \"{label}\"):"));
-                self.line(ind + 1, "_bits = _Bits()");
+                self.line(ind + 1, &format!("_bits = _Bits({bytes}, big={big})"));
                 let elem = (**elem).clone();
                 self.pack(ind + 1, "_v0", &elem, "0", label, 1);
-                self.line(ind + 1, &format!("_out += _bits.to_bytes({bytes}, big={big})"));
+                self.line(ind + 1, "_out += _bits.to_bytes()");
                 "bytes(_out)".to_string()
             }
             _ => format!("{expr}._pack_tail({big})"),

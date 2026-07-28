@@ -41,6 +41,8 @@ fn declaration_order_and_kinds() {
             ("struct", "TemperatureLog"),
             ("struct", "MotionPath"),
             ("struct", "LegacySerial"),
+            ("struct", "LegacyReading"),
+            ("struct", "LegacyLog"),
             ("struct", "DiagnosticLabel"),
             ("tagged union", "Command"),
             ("service", "HearingAidControl"),
@@ -238,7 +240,7 @@ fn service_and_characteristic_bindings() {
     let service = schema.services().next().expect("service");
     assert_eq!(service.name.name, "HearingAidControl");
     assert_eq!(service.uuid.value, "7d8f0000-3c1a-4e8a-9b5a-000000000000");
-    assert_eq!(service.characteristics.len(), 6);
+    assert_eq!(service.characteristics.len(), 8);
 
     let status = &service.characteristics[0];
     assert_eq!(status.name.name, "StatusChar");

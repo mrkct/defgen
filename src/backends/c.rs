@@ -57,18 +57,18 @@
 //!
 //! # Bit and byte order
 //!
-//! Fields are packed LSB-first with no gaps (§6), and byte order is applied
-//! once to the flattened sequence (§8). Both live in one place: `defgen__byte`
-//! maps a logical bit index to a physical byte, reversing for a big-endian
-//! root. Every read and write goes through it, so a container's byte order is
-//! a single `int big` argument threaded down from the root entry point rather
-//! than something each generated function decides for itself.
+//! Fields occupy the container in declaration order, packed with no gaps, and
+//! byte order (§8) decides which end of the container they fill from — LSB-first
+//! for a little-endian container, MSB-first for a big-endian one (§6). Both live
+//! in one place: `defgen__start` mirrors a value's offset for a big-endian
+//! container and `defgen__byte` maps the resulting bit to a physical byte. Every
+//! read and write goes through them, so a container's byte order is a single
+//! `int big` argument threaded down from the root entry point rather than
+//! something each generated function decides for itself.
 //!
-//! For a variable-length root (§6.3) that mapping covers the *fixed prefix*;
-//! the trailing elements follow it in order, each packed as its own
-//! byte-multiple unit under the same byte order. Reversing a whole buffer whose
-//! tail is UTF-8 text would be meaningless, and the spec's byte-order rule is
-//! about the bit-packed container, which is exactly the prefix.
+//! For a variable-length root (§6.3) that mapping covers the *fixed prefix*; the
+//! trailing elements follow it in order, each packed as its own byte-multiple
+//! unit under the same byte order.
 
 use super::{Backend, Generated, GeneratedFile, Options, sanitize_stem, screaming, snake};
 use crate::ast::{Docs, Endianness, FloatType, Property};
@@ -545,8 +545,9 @@ impl<'m> Emitter<'m> {
             0,
             &[
                 " *",
-                " * Codecs for this schema's GATT values: LSB-first bit packing, byte order",
-                " * applied per root container. Every function is `static inline`, so this",
+                " * Codecs for this schema's GATT values: fields in declaration order (§6),",
+                " * byte order applied per root container (§8). Every function is `static",
+                " * inline`, so this",
                 " * header is the whole dependency — there is no companion .c file.",
                 " *",
                 " * Sizes are byte counts. Every codec returns `defgen_err_t`; on anything",
@@ -627,35 +628,48 @@ impl<'m> Emitter<'m> {
         self.lines(
             0,
             &[
-                "/* Maps a logical bit index — LSB-first within the container, as §6 fixes it —",
-                "   to the byte actually holding it. Byte order (§8) is applied here and",
-                "   nowhere else: a big-endian container is the same bit sequence, read from",
-                "   the far end of the buffer. */",
+                "/* Where an `n`-bit value declared at offset `off` sits in the container's",
+                "   bits, and which byte of the buffer holds each of them. Byte order (§8) is",
+                "   applied in these two functions and nowhere else.",
+                "",
+                "   Fields always occupy the container in declaration order, first field",
+                "   first; byte order chooses which end of the container they fill from.",
+                "   Little-endian fills from the least-significant end, so a field's own bit i",
+                "   lands at container bit `off + i`; big-endian fills from the",
+                "   most-significant end, which is the mirror image — and mirroring the",
+                "   offsets is exactly what puts the first field in the first byte once the",
+                "   container is written out most-significant byte first. */",
+                "static inline uint32_t defgen__start(size_t size, int big, uint32_t off, uint32_t n) {",
+                "    return big ? ((uint32_t)size * 8u - off - n) : off;",
+                "}",
+                "",
                 "static inline size_t defgen__byte(size_t size, int big, uint32_t bit) {",
                 "    size_t i = (size_t)(bit >> 3);",
                 "    return big ? (size - (size_t)1 - i) : i;",
                 "}",
                 "",
-                "/* Reads `n` bits (n <= 64) starting at `off`, LSB-first. */",
+                "/* Reads `n` bits (n <= 64) of the value declared at `off`, LSB-first. */",
                 "static inline uint64_t defgen__get(const uint8_t *buf, size_t size, int big,",
                 "                                   uint32_t off, uint32_t n) {",
                 "    uint64_t v = 0;",
+                "    uint32_t start = defgen__start(size, big, off, n);",
                 "    uint32_t i;",
                 "    for (i = 0; i < n; i++) {",
-                "        uint32_t bit = off + i;",
+                "        uint32_t bit = start + i;",
                 "        size_t b = defgen__byte(size, big, bit);",
                 "        v |= (uint64_t)((buf[b] >> (bit & 7u)) & 1u) << i;",
                 "    }",
                 "    return v;",
                 "}",
                 "",
-                "/* Writes the low `n` bits (n <= 64) of `val` at `off`, LSB-first. Clears as",
-                "   well as sets, so it never assumes a zeroed buffer. */",
+                "/* Writes the low `n` bits (n <= 64) of `val` into the value declared at `off`,",
+                "   LSB-first. Clears as well as sets, so it never assumes a zeroed buffer. */",
                 "static inline void defgen__put(uint8_t *buf, size_t size, int big,",
                 "                               uint32_t off, uint32_t n, uint64_t val) {",
+                "    uint32_t start = defgen__start(size, big, off, n);",
                 "    uint32_t i;",
                 "    for (i = 0; i < n; i++) {",
-                "        uint32_t bit = off + i;",
+                "        uint32_t bit = start + i;",
                 "        size_t b = defgen__byte(size, big, bit);",
                 "        uint8_t mask = (uint8_t)(1u << (bit & 7u));",
                 "        if ((val >> i) & 1u) buf[b] = (uint8_t)(buf[b] | mask);",
@@ -682,9 +696,10 @@ impl<'m> Emitter<'m> {
                     "static inline defgen_u128 defgen__get_wide(const uint8_t *buf, size_t size,",
                     "                                           int big, uint32_t off, uint32_t n) {",
                     "    defgen_u128 v = 0;",
+                    "    uint32_t start = defgen__start(size, big, off, n);",
                     "    uint32_t i;",
                     "    for (i = 0; i < n; i++) {",
-                    "        uint32_t bit = off + i;",
+                    "        uint32_t bit = start + i;",
                     "        size_t b = defgen__byte(size, big, bit);",
                     "        v |= (defgen_u128)((buf[b] >> (bit & 7u)) & 1u) << i;",
                     "    }",
@@ -693,9 +708,10 @@ impl<'m> Emitter<'m> {
                     "",
                     "static inline void defgen__put_wide(uint8_t *buf, size_t size, int big,",
                     "                                    uint32_t off, uint32_t n, defgen_u128 val) {",
+                    "    uint32_t start = defgen__start(size, big, off, n);",
                     "    uint32_t i;",
                     "    for (i = 0; i < n; i++) {",
-                    "        uint32_t bit = off + i;",
+                    "        uint32_t bit = start + i;",
                     "        size_t b = defgen__byte(size, big, bit);",
                     "        uint8_t mask = (uint8_t)(1u << (bit & 7u));",
                     "        if ((uint32_t)((val >> i) & 1u)) buf[b] = (uint8_t)(buf[b] | mask);",
@@ -752,9 +768,10 @@ impl<'m> Emitter<'m> {
                     "   run of any width, byte-aligned or not, is one call. */",
                     "static inline int defgen__bits_zero(const uint8_t *buf, size_t size, int big,",
                     "                                    uint32_t off, uint32_t n) {",
+                    "    uint32_t start = defgen__start(size, big, off, n);",
                     "    uint32_t i;",
                     "    for (i = 0; i < n; i++) {",
-                    "        uint32_t bit = off + i;",
+                    "        uint32_t bit = start + i;",
                     "        size_t b = defgen__byte(size, big, bit);",
                     "        if ((buf[b] >> (bit & 7u)) & 1u) return 0;",
                     "    }",

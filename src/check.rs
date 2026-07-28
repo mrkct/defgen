@@ -644,8 +644,8 @@ impl<'a> Checker<'a> {
     // Fields and layout (§6, §6.2, §6.3)
     // -----------------------------------------------------------------------
 
-    /// Places a container's fields, LSB-first in declaration order with no
-    /// gaps (§6), enforcing the variable-length rules of §6.3 along the way.
+    /// Places a container's fields in declaration order with no gaps (§6),
+    /// enforcing the variable-length rules of §6.3 along the way.
     /// `base_offset` is where `fields` starts within its enclosing container
     /// (0 for a struct's own fields, the tag width for a tagged-union
     /// variant's payload), so the byte-crossing diagnostic can reason about
@@ -754,8 +754,8 @@ impl<'a> Checker<'a> {
     }
 
     /// Flags a named field that starts mid-byte and spans into the next byte
-    /// — legal (defgen bit-packs LSB-first with no alignment requirement,
-    /// §6), but often an unintentional miscount, so it gets a non-fatal
+    /// — legal (defgen bit-packs with no alignment requirement, §6), but
+    /// often an unintentional miscount, so it gets a non-fatal
     /// diagnostic rather than being silently accepted. `padding` is exempt:
     /// it carries no value, so crossing a byte has no bug signal.
     fn check_byte_crossing(&mut self, field: &'a ast::Field, start: u64, width: u32) {
@@ -773,7 +773,7 @@ impl<'a> Checker<'a> {
                 field.span,
                 format!("starts {into} bit{} into byte {}, ends in byte {}", plural(into as u32), start / 8, end / 8),
             )
-            .note("defgen bit-packs fields LSB-first with no alignment requirement, so this is legal — some real wire formats split fields exactly this way (e.g. BLE's own `Appearance` characteristic, a 10-bit/6-bit split of one 16-bit value) (§6)")
+            .note("defgen bit-packs fields with no alignment requirement, so this is legal — some real wire formats split fields exactly this way (e.g. BLE's own `Appearance` characteristic, a 10-bit/6-bit split of one 16-bit value) (§6)")
             .help("if this wasn't intentional, reorder the fields or insert explicit padding so it starts at a byte boundary");
         self.error(w);
     }
